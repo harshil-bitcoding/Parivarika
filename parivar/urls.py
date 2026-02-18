@@ -197,7 +197,7 @@ urlpatterns = [
     ),
     path(
         "api/v4/person/pending-approve-new-member",
-        V2Views.PendingApproveDetailView.as_view(),
+        V4Views.V4PendingApproveDetailView.as_view(),
         name="pending-approve-new-member",
     ),
     
@@ -227,7 +227,7 @@ urlpatterns = [
         name="relation_list",
     ),
     path(
-        "api/v4/relation/<str:surnameid>/<int:request_village_id>",
+        "api/v4/relation/<str:surnameid>",
         V4Views.V4ParentChildRelationDetailView.as_view(),
         name="relation",
     ),
@@ -252,11 +252,11 @@ urlpatterns = [
         V3Views.PersonMiddleNameUpdate.as_view(),
         name="middle_name_update",
     ),
-    # path(
-    #     "api/v4/search-by-person",
-    #     V4Views.V4SearchbyPerson.as_view(),
-    #     name="search_by_person",
-    # ),
+    path(
+        "api/v4/search-by-person",
+        V4Views.V4SearchbyPerson.as_view(),
+        name="search_by_person",
+    ),
     path("api/v4/login", V4Views.V4LoginAPI.as_view(), name="login"),
     path(
         "api/v4/additional-data",

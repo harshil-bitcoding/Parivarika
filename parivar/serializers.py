@@ -163,6 +163,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
     samaj_id = serializers.IntegerField(source='samaj.id', read_only=True)
     referal_code = serializers.CharField(source='samaj.referral_code', read_only=True)
     is_premium = serializers.BooleanField(source='samaj.is_premium', read_only=True)
+    mobile_number = serializers.CharField(source='mobile_number1')
 
     class Meta:
         model = Person
@@ -171,7 +172,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "first_name",
             "middle_name",
             "surname",
-            "mobile_number1",
+            "mobile_number",
             "mobile_number2",
             "address",
             "is_same_as_father_address",

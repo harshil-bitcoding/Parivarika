@@ -64,7 +64,9 @@ import os
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from random import choices
+import logging
 
+logger = logging.getLogger(__name__)
 
 class DistrictDetailView(APIView):
     @swagger_auto_schema(
@@ -157,32 +159,55 @@ class SurnameByVillageView(APIView):
     @swagger_auto_schema(
         operation_description="Get surnames present in a specific village",
         manual_parameters=[
-            openapi.Parameter('village_id', openapi.IN_QUERY, description="ID of the village", type=openapi.TYPE_INTEGER, required=True),
             openapi.Parameter('lang', openapi.IN_QUERY, description="Language (en/guj)", type=openapi.TYPE_STRING),
-            openapi.Parameter('samaj_id', openapi.IN_QUERY, description="Optional Samaj ID filter", type=openapi.TYPE_INTEGER)
         ],
         responses={200: openapi.Response(description="Surnames list", schema=SurnameSerializer(many=True)), 400: "Village ID is required"}
     )
     def get(self, request):
         lang = request.GET.get("lang", "en")
-            
-        # Get unique surname IDs for members in this village/samaj
-        # is_demo = request.GET.get("is_demo") == "true"
-        person_model = Person # DemoPerson if is_demo else Person
-        samaj_id = request.GET.get("samaj_id")
-        
+        mobile_number = request.headers.get("X-Mobile-Number")
+
+        # Validate mobile number
+        if not mobile_number:
+            return Response(
+                {"error": "Mobile number is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Fetch login person
+        login_person = Person.objects.filter(
+            Q(mobile_number1=mobile_number) |
+            Q(mobile_number2=mobile_number),
+            is_deleted=False
+        ).select_related("samaj__village").first()
+
+        if not login_person:
+            return Response(
+                {"error": "Person not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not login_person.samaj_id:
+            return Response(
+                {"error": "Samaj not assigned to this user"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Filter only login user's samaj
         person_filter = Q(
-            samaj_id=samaj_id,
+            samaj_id=login_person.samaj_id,
             is_deleted=False,
             flag_show=True
         )
 
-        # if samaj_id:
-        #     person_filter &= Q(samaj_id=samaj_id)
-            
-        surname_ids = person_model.objects.filter(person_filter).values_list('surname_id', flat=True).distinct()
-        
-        surnames = Surname.objects.filter(id__in=surname_ids).order_by('name')
+        surname_ids = (
+            Person.objects
+            .filter(person_filter)
+            .values_list("surname_id", flat=True)
+            .distinct()
+        )
+
+        surnames = Surname.objects.filter(id__in=surname_ids).order_by("name")
         serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -388,6 +413,30 @@ class V4RelationtreeAPIView(APIView):
     def get(self, request):
         lang = request.GET.get("lang", "en")
         person_id = request.GET.get("person_id")
+        mobile_number = request.headers.get("X-Mobile-Number")
+        login_village_id = None
+
+        if not mobile_number:
+            return Response(
+                {"error": "Mobile number is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if mobile_number:
+            login_person = Person.objects.filter(
+                Q(mobile_number1=mobile_number) |
+                Q(mobile_number2=mobile_number),
+                is_deleted=False
+            ).select_related("samaj__village").first()
+
+            if login_person and login_person.samaj and login_person.samaj.village_id:
+                login_village_id = login_person.samaj.village_id
+
+            if not login_village_id:
+                return Response(
+                    {"error": "Login person's village information is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         try:
             person = Person.objects.get(id=person_id, is_deleted=False)
@@ -415,18 +464,87 @@ class V4RelationtreeAPIView(APIView):
                             )
                         )
                 relations = new_relations
-            person_data = (
+            
+            person_data_queryset = (
                 Person.objects.filter(
                     surname__id=surname, flag_show=True, is_deleted=False
                 )
                 .exclude(id__in=parent_data_id)
+                .annotate(
+                    translated_first_name_annotated=Case(
+                        # Gujarati translated name exists
+                        When(
+                            Q(
+                                translateperson__first_name__isnull=False,
+                                translateperson__language=lang,
+                            ) &
+                            ~Q(samaj__village_id=login_village_id),   
+                            then=Concat(
+                                F("translateperson__first_name"),
+                                Value(" ("),
+                                F("samaj__village__name"),
+                                Value(")"),
+                                output_field=CharField(),
+                            ),
+                        ),
+                        # English name outside village
+                        When(
+                            ~Q(samaj__village_id=login_village_id),
+                            then=Concat(
+                                F("first_name"),
+                                Value(" ("),
+                                F("samaj__village__name"),
+                                Value(")"),
+                                output_field=CharField(),
+                            ),
+                        ),
+                        # Default (same village)
+                        default=Case(
+                            When(
+                                Q(
+                                    translateperson__first_name__isnull=False,
+                                    translateperson__language=lang,
+                                ),
+                                then=F("translateperson__first_name"),
+                            ),
+                            default=F("first_name"),
+                        ),
+                        output_field=CharField(),
+                    ),
+                    translated_middle_name_annotated=Case(
+                        When(
+                            Q(
+                                translateperson__middle_name__isnull=False,
+                                translateperson__language=lang,
+                            ),
+                            then=F("translateperson__middle_name"),
+                        ),
+                        default=F("middle_name"),
+                        output_field=CharField(),
+                    )
+                )
                 .order_by("first_name")
-            )
-            serializer = PersonGetSerializer(
-                person_data, many=True, context={"lang": lang}
+                .prefetch_related("translateperson")
             )
 
-            return Response({"data": serializer.data})
+            # Manual serialization for specific format
+            data = []
+            for p in person_data_queryset:
+                data.append({
+                    "id": p.id,
+                    "date_of_birth": p.date_of_birth,
+                    "profile": p.profile.url if p.profile else os.getenv("DEFAULT_PROFILE_PATH"),
+                    "thumb_profile": p.thumb_profile.url if p.thumb_profile else os.getenv("DEFAULT_PROFILE_PATH"),
+                    "mobile_number1": p.mobile_number1,
+                    "mobile_number2": p.mobile_number2,
+                    "out_of_country": p.out_of_country.name if p.out_of_country else "", # Minimal for relation-tree
+                    "flag_show": p.flag_show,
+                    "emoji": p.emoji if hasattr(p, 'emoji') else "",
+                    "translated_first_name": p.translated_first_name_annotated,
+                    "translated_middle_name": p.translated_middle_name_annotated,
+                })
+
+            return Response({"data": data})
 
         except Person.DoesNotExist:
             return Response(
@@ -459,15 +577,41 @@ class V4ParentChildRelationDetailView(APIView):
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def get(self, request, surnameid=None, request_village_id=None):
+    def get(self, request, surnameid=None):
         if surnameid:
             try:
                 surnameid = int(surnameid)
+
             except ValueError:
                 return Response(
                     {"error": "Invalid surname ID"}, status=status.HTTP_400_BAD_REQUEST
                 )
             lang = request.GET.get("lang", "en")
+            mobile_number = request.headers.get("X-Mobile-Number")
+            login_village_id = None
+
+            if not mobile_number:
+                return Response(
+                    {"error": "Mobile number is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if mobile_number:
+                login_person = Person.objects.filter(
+                    Q(mobile_number1=mobile_number) |
+                    Q(mobile_number2=mobile_number),
+                    is_deleted=False
+                ).select_related("samaj__village").first()
+
+                if login_person and login_person.samaj and login_person.samaj.village_id:
+                    login_village_id = login_person.samaj.village_id
+
+                if not login_village_id:
+                    return Response(
+                        {"error": "Login person's village information is required"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
             # Query
             queryset = (
                 Person.objects.filter(surname__id=surnameid, is_deleted=False)
@@ -481,7 +625,7 @@ class V4ParentChildRelationDetailView(APIView):
                                 translateperson__first_name__isnull=False,
                                 translateperson__language=lang,
                             ) &
-                            ~Q(samaj__village_id=request_village_id),   # outside village
+                            ~Q(samaj__village_id=login_village_id),   
                             then=Concat(
                                 F("translateperson__first_name"),
                                 Value(" ("),
@@ -493,7 +637,7 @@ class V4ParentChildRelationDetailView(APIView):
 
                         # English name outside village
                         When(
-                            ~Q(samaj__village_id=request_village_id),
+                            ~Q(samaj__village_id=login_village_id),
                             then=Concat(
                                 F("first_name"),
                                 Value(" ("),
@@ -819,6 +963,7 @@ class V4PersonDetailView(APIView):
         flag_show = request.data.get('flag_show')
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
+        samaj_id = request.data.get('samaj')
         status_name = request.data.get('status')
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
@@ -1650,3 +1795,184 @@ class V4AdminPersonDetailView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
+class V4SearchbyPerson(APIView):
+    def post(self, request):
+        lang = request.data.get("lang", "en")
+        search = request.data.get("search", "")
+        person_id = request.data.get("person_id")
+
+        if search == "":
+            return JsonResponse({"data": []}, status=200)
+
+        # Get logged in person
+        try:
+            login_person = Person.objects.select_related(
+                "samaj__village"
+            ).get(id=person_id, is_deleted=False)
+        except Person.DoesNotExist:
+            return JsonResponse({"message": "Person not found"}, status=404)
+
+        # Build search query
+        search_keywords = search.split(" ")
+        search_q = Q()
+        for keyword in search_keywords:
+            search_q &= (
+                Q(first_name__icontains=keyword)
+                | Q(date_of_birth__icontains=keyword)
+                | Q(mobile_number1__icontains=keyword)
+                | Q(mobile_number2__icontains=keyword)
+                | Q(surname__name__icontains=keyword)
+                | Q(surname__guj_name__icontains=keyword)
+                | Q(translateperson__first_name__icontains=keyword)
+            )
+
+        # Samaj + Village restriction
+        base_filter = Q(
+            samaj_id=login_person.samaj_id,
+            samaj__village_id=login_person.samaj.village_id,
+            flag_show=True,
+            is_deleted=False,
+        )
+
+        persons = (
+            Person.objects.filter(search_q & base_filter)
+            .exclude(
+                id__in=Surname.objects.annotate(
+                    top_member_as_int=Cast("top_member", IntegerField())
+                ).values_list("top_member_as_int", flat=True)
+            )
+            .select_related("surname", "samaj__village")
+            .distinct()
+            .order_by(
+                "first_name",
+                "translateperson__first_name",
+                "middle_name",
+                "translateperson__middle_name",
+                "surname__name",
+            )
+        )
+
+        data = PersonGetDataSortSerializer(
+            persons, many=True, context={"lang": lang}
+        )
+
+        return JsonResponse({"data": data.data}, status=200)
+
+class V4PendingApproveDetailView(APIView):
+    authentication_classes = []
+    def post(self, request, format=None):
+        lang = request.data.get('lang', 'en')
+        try:
+            user_id = request.data.get('admin_user_id')
+            if not user_id:
+                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                person = Person.objects.get(pk=user_id)
+            except Person.DoesNotExist:
+                logger.error(f'Person with ID {user_id} not found')
+                return Response({'message': 'User not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not person.is_admin and not person.is_super_admin:
+                return Response({'message': 'User does not have admin access'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            top_member_ids = Surname.objects.exclude(top_member=None).exclude(top_member='').values_list('top_member', flat=True)
+            top_member_ids = [int(id) for id in top_member_ids]
+            pending_users = Person.objects.filter(flag_show=False).exclude(pk__in=top_member_ids)
+            surname = (
+                person.surname
+            )
+            if person.is_admin:
+                pending_users = Person.objects.filter(
+                        flag_show=False, surname=surname, is_deleted=False
+                    ).exclude(id=surname.top_member)
+            else:
+                pending_users = Person.objects.filter(
+                    flag_show=False, is_deleted=False
+                ).exclude(id=surname.top_member)
+
+            if not pending_users.exists():
+                logger.info('No users with flag_show=False and excluding top_members found')
+                return Response({'message': 'No users with pending confirmation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            serializer = PersonGetSerializer2(pending_users, many=True, context={'lang': lang})
+            return Response({'data' : serializer.data}, status=status.HTTP_200_OK)
+        except ValueError:
+            return Response({'message': 'Invalid top_member ID found in Surname table'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            logger.error(f'An unexpected error occurred: {str(e)}')
+            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def put(self, request, format=None):
+        try:
+            admin_user_id = request.data.get('admin_user_id')
+            if not admin_user_id:
+                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                admin_person = Person.objects.get(pk=admin_user_id)
+            except Person.DoesNotExist:
+                logger.error(f'Person with ID {admin_user_id} not found')
+                return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not admin_person.is_admin:
+                return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
+            user_id = request.data.get('user_id')
+            if not user_id:
+                return Response({'message': 'Missing User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                person = Person.objects.get(pk=user_id)
+            except Person.DoesNotExist:
+                logger.error(f'Person with ID {user_id} not found')
+                return Response({'message': f'Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if person.flag_show:
+                return Response({'message': 'User Already Approved'}, status=status.HTTP_202_ACCEPTED)
+            flag_show = request.data.get('flag_show', person.flag_show)
+            person.flag_show = flag_show
+            person.save()
+            serializer = PersonGetSerializer(person)
+            return Response({'data': serializer.data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f'An unexpected error occurred: {str(e)}')
+            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def delete(self, request):
+        try:
+            admin_user_id = request.data.get('admin_user_id')
+            if not admin_user_id:
+                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                admin_person = Person.objects.get(pk=admin_user_id)
+            except Person.DoesNotExist:
+                logger.error(f'Person with ID {admin_user_id} not found')
+                return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not admin_person.is_admin:
+                return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
+            user_id = request.data.get('user_id')
+            if not user_id:
+                return Response({'message': 'Missing User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                person = Person.objects.get(pk=user_id)
+            except Person.DoesNotExist:
+                logger.error(f'Person with ID {user_id} not found')
+                return Response({'message': f'Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            try:
+                translate_person = TranslatePerson.objects.get(person_id=user_id)
+                translate_person.delete()
+            except TranslatePerson.DoesNotExist:
+                logger.error(f'TranslatePerson with ID {user_id} not found')
+                pass
+            try:
+                top_member_ids = Surname.objects.filter(name=person.surname).values_list('top_member', flat=True)
+                top_member_ids = [int(id) for id in top_member_ids]
+                if len(top_member_ids) > 0:
+                    children = ParentChildRelation.objects.filter(parent_id=user_id)
+                    for child in children:
+                        child.parent_id = top_member_ids[0]
+                        child.save()
+            except Surname.DoesNotExist:
+                print(f'TranslatePerson with ID {user_id} not found')
+                return Response({"message": f"Surname not exist"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except Exception as exp:
+                print(f'TranslatePerson with ID {user_id} not found')
+                return Response({"message": f"${exp}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            person.delete()
+            return Response({"message": f"Person deleted successfully."}, status=status.HTTP_200_OK)
+        except Http404:
+            return Response({"message": f"Person not found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({"message": f"Failed to delete the for this record"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
