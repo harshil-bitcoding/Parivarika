@@ -27,6 +27,7 @@ from django.conf import settings
 from notifications.models import PersonPlayerId
 from ..serializers import (
     DistrictSerializer,
+    PersonGetSerializer4,
     StateSerializer, 
     TalukaSerializer, 
     VillageSerializer,
@@ -38,7 +39,7 @@ from ..serializers import (
     PersonSerializer,
     AdminPersonGetSerializer,
     GetParentChildRelationSerializer,
-    PersonGetSerializer,
+    PersonGetV4Serializer,
     GetSurnameSerializer,
     GetTreeRelationSerializer,
     GetSurnameSerializerdata,
@@ -915,7 +916,7 @@ class V4PersonDetailView(APIView):
             person = Person.objects.get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
-                person = PersonGetSerializer(person, context={'lang': lang}).data
+                person = PersonGetV4Serializer(person, context={'lang': lang}).data
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
@@ -1035,7 +1036,7 @@ class V4PersonDetailView(APIView):
                 person_translate_serializer = TranslatePersonSerializer(data=person_translate_data)
                 if person_translate_serializer.is_valid():
                     person_translate_serializer.save()
-            return Response(PersonGetSerializer(persons, context={'lang': lang}).data, status=status.HTTP_201_CREATED)
+            return Response(PersonGetV4Serializer(persons, context={'lang': lang}).data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -1167,7 +1168,7 @@ class V4PersonDetailView(APIView):
                     if person_translate_serializer.is_valid():
                         person_translate_serializer.save()
             return Response({
-                "person": PersonGetSerializer(persons, context={'lang': lang}).data
+                "person": PersonGetV4Serializer(persons, context={'lang': lang}).data
             }, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1222,15 +1223,23 @@ class V4AdminAccess(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         admin_data = Person.objects.filter(
-            Q(is_admin=True) or Q(is_super_admin=True), is_deleted=False
+            Q(is_admin=True) | Q(is_super_admin=True), is_deleted=False
         )
-        serializer = PersonGetSerializer(admin_data, context={"lang": lang}, many=True)
+        serializer = PersonGetV4Serializer(admin_data, context={"lang": lang}, many=True)
         return Response({"admin-data": serializer.data}, status=status.HTTP_200_OK)
 
     def post(self, request):
         lang = request.data.get("lang", "en")
         mobile = request.data.get("mobile")
         admin_user_id = request.data.get("admin_user_id")
+        if not mobile:
+            return Response(
+                {"message": "Mobile number list is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if isinstance(mobile, str):
+            mobile = [mobile]
         if not admin_user_id:
             if lang == "guj":
                 return Response(
@@ -1269,7 +1278,7 @@ class V4AdminAccess(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         admin_access = Person.objects.filter(
-            Q(mobile_number1__in=mobile) or Q(mobile_number2__in=mobile),
+            Q(mobile_number1__in=mobile) | Q(mobile_number2__in=mobile),
             is_deleted=False,
         )
 
@@ -1357,7 +1366,7 @@ class V4AdminAccess(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         admin_access = Person.objects.filter(
-            Q(mobile_number1__in=mobile) or Q(mobile_number2__in=mobile),
+            Q(mobile_number1__in=mobile) | Q(mobile_number2__in=mobile),
             is_admin=True,
             is_deleted=False,
         )
@@ -1485,7 +1494,7 @@ class V4AdminPersons(APIView):
                 .order_by("first_name")
             )
             if persons.exists():
-                serializer = PersonGetSerializer(
+                serializer = PersonGetV4Serializer(
                     persons, many=True, context={"lang": lang}
                 )
                 if len(serializer.data) > 0:
@@ -1531,8 +1540,8 @@ class V4AdminPersons(APIView):
 
 class V4AdminPersonDetailView(APIView):
     authentication_classes = []
-    def get(self, request, pk, admin_uid):
-        admin_user_id = admin_uid
+    def get(self, request, pk, admin_user_id):
+        admin_user_id = admin_user_id
         if not admin_user_id:
             return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         try:
@@ -1861,118 +1870,250 @@ class V4SearchbyPerson(APIView):
 class V4PendingApproveDetailView(APIView):
     authentication_classes = []
     def post(self, request, format=None):
-        lang = request.data.get('lang', 'en')
+        lang = request.data.get("lang", "en")
         try:
-            user_id = request.data.get('admin_user_id')
-            if not user_id:
-                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            admin_user_id = request.data.get("admin_user_id")
+            if not admin_user_id:
+                message = (
+                    "એડમીન મળી રહીયો નથી"
+                    if lang == "guj"
+                    else "Missing Admin User in request data"
+                )
+                return Response(
+                    {"message": message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
             try:
-                person = Person.objects.get(pk=user_id)
+                person = Person.objects.get(pk=admin_user_id, is_deleted=False)
             except Person.DoesNotExist:
-                logger.error(f'Person with ID {user_id} not found')
-                return Response({'message': 'User not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": "User not found"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             if not person.is_admin and not person.is_super_admin:
-                return Response({'message': 'User does not have admin access'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            top_member_ids = Surname.objects.exclude(top_member=None).exclude(top_member='').values_list('top_member', flat=True)
-            top_member_ids = [int(id) for id in top_member_ids]
-            pending_users = Person.objects.filter(flag_show=False).exclude(pk__in=top_member_ids)
+                return Response(
+                    {"message": "User does not have admin access"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Get surname based on admin user (assuming relationship exists)
             surname = (
                 person.surname
-            )
-            if person.is_admin:
-                pending_users = Person.objects.filter(
-                        flag_show=False, surname=surname, is_deleted=False
-                    ).exclude(id=surname.top_member)
-            else:
+            )  # Modify this line based on your model relationships
+
+            # Filter users by surname instead of top_member
+            if person.is_super_admin == True:
                 pending_users = Person.objects.filter(
                     flag_show=False, is_deleted=False
                 ).exclude(id=surname.top_member)
+                if not pending_users.exists():
+                    return Response(
+                        {
+                            "message": "No users with pending confirmation for this surname"
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+                child_users = pending_users.filter(child_flag=True).order_by(
+                    "first_name"
+                )
+                other_users = pending_users.filter(child_flag=False).order_by(
+                    "first_name"
+                )
+                data = {
+                    "child": PersonV4Serializer(
+                        child_users, many=True, context={"lang": lang}
+                    ).data,
+                    "others": PersonV4Serializer(
+                        other_users, many=True, context={"lang": lang}
+                    ).data,
+                }
+            elif person.is_admin == True:
 
-            if not pending_users.exists():
-                logger.info('No users with flag_show=False and excluding top_members found')
-                return Response({'message': 'No users with pending confirmation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            serializer = PersonGetSerializer2(pending_users, many=True, context={'lang': lang})
-            return Response({'data' : serializer.data}, status=status.HTTP_200_OK)
+                pending_users = Person.objects.filter(
+                    flag_show=False, surname=surname, is_deleted=False
+                ).exclude(id=surname.top_member)
+                if not pending_users.exists():
+                    return Response(
+                        {
+                            "message": "No users with pending confirmation for this surname"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+                child_users = pending_users.filter(child_flag=True).order_by(
+                    "first_name"
+                )
+                other_users = pending_users.exclude(child_flag=True).order_by(
+                    "first_name"
+                )
+
+                data = {
+                    "child": PersonV4Serializer(
+                        child_users, many=True, context={"lang": lang}
+                    ).data,
+                    "others": PersonV4Serializer(
+                        other_users, many=True, context={"lang": lang}
+                    ).data,
+                }
+
+            return Response(
+                {"message": "success", "data": data}, status=status.HTTP_200_OK
+            )
         except ValueError:
-            return Response({'message': 'Invalid top_member ID found in Surname table'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"message": "Invalid data provided"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         except Exception as e:
-            logger.error(f'An unexpected error occurred: {str(e)}')
-            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     def put(self, request, format=None):
         try:
-            admin_user_id = request.data.get('admin_user_id')
+            admin_user_id = request.data.get("admin_user_id")
             if not admin_user_id:
-                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": "Missing Admin User in request data"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             try:
-                admin_person = Person.objects.get(pk=admin_user_id)
+                admin_person = Person.objects.get(pk=admin_user_id, is_deleted=False)
             except Person.DoesNotExist:
-                logger.error(f'Person with ID {admin_user_id} not found')
-                return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            if not admin_person.is_admin:
-                return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
-            user_id = request.data.get('user_id')
+                logger.error(f"Person with ID {admin_user_id} not found")
+                return Response(
+                    {"message": f"Admin Person not found"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            if not (admin_person.is_admin or admin_person.is_super_admin):
+                return Response(
+                    {"message": "User does not have admin access"},
+                    status=status.HTTP_200_OK,
+                )
+            user_id = request.data.get("user_id")
             if not user_id:
-                return Response({'message': 'Missing User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": "Missing User in request data"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             try:
-                person = Person.objects.get(pk=user_id)
+                person = Person.objects.get(pk=user_id, is_deleted=False)
             except Person.DoesNotExist:
-                logger.error(f'Person with ID {user_id} not found')
-                return Response({'message': f'Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                logger.error(f"Person with ID {user_id} not found")
+                return Response(
+                    {"message": f"Person not found"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             if person.flag_show:
-                return Response({'message': 'User Already Approved'}, status=status.HTTP_202_ACCEPTED)
-            flag_show = request.data.get('flag_show', person.flag_show)
+                return Response(
+                    {"message": "User Already Approved"},
+                    status=status.HTTP_202_ACCEPTED,
+                )
+            flag_show = request.data.get("flag_show", person.flag_show)
             person.flag_show = flag_show
             person.save()
-            serializer = PersonGetSerializer(person)
-            return Response({'data': serializer.data}, status=status.HTTP_200_OK)
+            serializer = PersonGetV4Serializer(person)
+            return Response({"data": serializer.data}, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f'An unexpected error occurred: {str(e)}')
-            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"An unexpected error occurred: {str(e)}")
+            return Response(
+                {"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     def delete(self, request):
+        lang = request.data.get("lang", "en")
         try:
-            admin_user_id = request.data.get('admin_user_id')
-            if not admin_user_id:
-                return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            admin_user_id = request.data.get("admin_user_id")
+            if not admin_user_id or admin_user_id is None or admin_user_id == "":
+                if lang == "guj":
+                    return Response(
+                        {"message": "એડમીન સભ્ય ડેટામાં મળી રહીયો નથી"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+                else:
+                    return Response(
+                        {"message": "Missing Admin User in request data"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
             try:
-                admin_person = Person.objects.get(pk=admin_user_id)
+                admin_person = Person.objects.get(pk=admin_user_id, is_deleted=False)
             except Person.DoesNotExist:
-                logger.error(f'Person with ID {admin_user_id} not found')
-                return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            if not admin_person.is_admin:
-                return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
-            user_id = request.data.get('user_id')
-            if not user_id:
-                return Response({'message': 'Missing User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": f"Admin Person not found"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            if not (admin_person.is_admin or admin_person.is_super_admin):
+                if lang == "guj":
+                    return Response(
+                        {"message": "વપરાશકર્તા સભ્ય પાસે એડમિન એક્સેસ નથી"},
+                        status=status.HTTP_200_OK,
+                    )
+                else:
+                    return Response(
+                        {"message": "User does not have admin access"},
+                        status=status.HTTP_200_OK,
+                    )
+            user_id = request.data.get("user_id")
+            if not user_id or user_id is None or user_id == "":
+                return Response(
+                    {"message": "Missing User in request data"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             try:
-                person = Person.objects.get(pk=user_id)
+                person = Person.objects.get(pk=user_id, is_deleted=False)
             except Person.DoesNotExist:
-                logger.error(f'Person with ID {user_id} not found')
-                return Response({'message': f'Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": f"Person not found"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             try:
-                translate_person = TranslatePerson.objects.get(person_id=user_id)
-                translate_person.delete()
+                translate_person = TranslatePerson.objects.get(
+                    person_id=user_id, is_deleted=False
+                )
+                translate_person.is_deleted = True
+                translate_person.save()
             except TranslatePerson.DoesNotExist:
-                logger.error(f'TranslatePerson with ID {user_id} not found')
                 pass
             try:
-                top_member_ids = Surname.objects.filter(name=person.surname).values_list('top_member', flat=True)
+                top_member_ids = Surname.objects.filter(
+                    name=person.surname
+                ).values_list("top_member", flat=True)
                 top_member_ids = [int(id) for id in top_member_ids]
                 if len(top_member_ids) > 0:
-                    children = ParentChildRelation.objects.filter(parent_id=user_id)
+                    children = ParentChildRelation.objects.filter(
+                        parent_id=user_id, is_deleted=False
+                    )
                     for child in children:
                         child.parent_id = top_member_ids[0]
                         child.save()
+                try:
+                    child_data = ParentChildRelation.objects.get(
+                        child_id=user_id, is_deleted=False
+                    )
+                    child_data.is_deleted = True
+                    child_data.save()
+                except:
+                    pass
             except Surname.DoesNotExist:
-                print(f'TranslatePerson with ID {user_id} not found')
-                return Response({"message": f"Surname not exist"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"message": f"Surname not exist"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             except Exception as exp:
-                print(f'TranslatePerson with ID {user_id} not found')
-                return Response({"message": f"${exp}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            person.delete()
-            return Response({"message": f"Person deleted successfully."}, status=status.HTTP_200_OK)
+                return Response(
+                    {"message": f"${exp}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            person.flag_show = False
+            person.is_deleted = True
+            person.save()
+            return Response(
+                {"message": f"Person deleted successfully."}, status=status.HTTP_200_OK
+            )
         except Http404:
-            return Response({"message": f"Person not found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"message": f"Person not found."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         except Exception as e:
-            return Response({"message": f"Failed to delete the for this record"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"message": f"Failed to delete the for this record"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

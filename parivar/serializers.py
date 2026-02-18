@@ -97,7 +97,6 @@ class SamajSerializer(serializers.ModelSerializer):
     village_name = serializers.SerializerMethodField(read_only=True)
     taluka_name = serializers.SerializerMethodField(read_only=True)
     district_name = serializers.SerializerMethodField(read_only=True)
-    village = serializers.SerializerMethodField(read_only=True)
     taluka = serializers.SerializerMethodField(read_only=True)
     district = serializers.SerializerMethodField(read_only=True)
     
@@ -105,7 +104,7 @@ class SamajSerializer(serializers.ModelSerializer):
         model = Samaj
         fields = [
             'id', 'name', 'guj_name', 'logo', 'referral_code', 'is_premium', 
-            'village', 'village_name', 'taluka', 'taluka_name', 'district', 'district_name'
+            'village_name', 'taluka', 'taluka_name', 'district', 'district_name'
         ]
     
     def get_village_name(self, obj):
@@ -152,18 +151,17 @@ class SamajSerializer(serializers.ModelSerializer):
 
 class PersonV4Serializer(serializers.ModelSerializer):
     surname = serializers.SerializerMethodField(source='surname.name', read_only=True)
-    village_name = serializers.SerializerMethodField()
+    village_name = serializers.SerializerMethodField(source='samaj.village.name', read_only=True)
     taluka_name = serializers.SerializerMethodField()
     district_name = serializers.SerializerMethodField()
     city = serializers.SerializerMethodField(source='city.name', read_only=True)
     state = serializers.SerializerMethodField(source='state.name', read_only=True)
     out_of_country = serializers.SerializerMethodField(source='out_of_country.name', read_only=True)
-    relations = serializers.SerializerMethodField()
+    # relations = serializers.SerializerMethodField()
     village_id = serializers.IntegerField(source='samaj.village_id', read_only=True)
     samaj_id = serializers.IntegerField(source='samaj.id', read_only=True)
     referal_code = serializers.CharField(source='samaj.referral_code', read_only=True)
     is_premium = serializers.BooleanField(source='samaj.is_premium', read_only=True)
-    mobile_number = serializers.CharField(source='mobile_number1')
 
     class Meta:
         model = Person
@@ -172,7 +170,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "first_name",
             "middle_name",
             "surname",
-            "mobile_number",
+            "mobile_number1",
             "mobile_number2",
             "address",
             "is_same_as_father_address",
@@ -197,7 +195,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "is_registered_directly",
             "update_field_message",
             "platform",
-            "relations",
+            # "relations",
             "is_super_uper",
             "is_show_old_contact",
             "password",
@@ -218,7 +216,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
 
     def get_village_name(self, obj):
         lang = self.context.get("lang", "en")
-        if obj.samaj.village:
+        if obj.samaj and obj.samaj.village:
             if lang == "guj" and obj.samaj.village.guj_name:
                 return obj.samaj.village.guj_name
             return obj.samaj.village.name
@@ -226,7 +224,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
 
     def get_taluka_name(self, obj):
         lang = self.context.get("lang", "en")
-        if obj.samaj.village.taluka:
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka:
             if lang == "guj" and obj.samaj.village.taluka.guj_name:
                 return obj.samaj.village.taluka.guj_name
             return obj.samaj.village.taluka.name
@@ -234,7 +232,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
 
     def get_district_name(self, obj):
         lang = self.context.get("lang", "en")
-        if obj.samaj.village.taluka.district:
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka and obj.samaj.village.taluka.district:
             if lang == "guj" and obj.samaj.village.taluka.district.guj_name:
                 return obj.samaj.village.taluka.district.guj_name
             return obj.samaj.village.taluka.district.name
@@ -291,61 +289,71 @@ class PersonV4Serializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
-        first_name = data.get("first_name")
-        if not first_name:
+
+        import re
+        from django.db.models import Q
+        from datetime import datetime
+        from .models import Person
+
+        # ---------- REQUIRED FIELDS ----------
+        if not data.get("first_name"):
             raise serializers.ValidationError({"message": "First name is required."})
 
-        middle_name = data.get("middle_name")
-        if not middle_name:
+        if not data.get("middle_name"):
             raise serializers.ValidationError({"message": "Middle name is required."})
 
         flag_show = data.get("flag_show")
-        if flag_show and flag_show not in [True, False]:
-            raise serializers.ValidationError({"message": "Flag show must be a boolean value."})
+        if flag_show is not None and not isinstance(flag_show, bool):
+            raise serializers.ValidationError({"message": "Flag show must be boolean."})
 
+        # ---------- MOBILE VALIDATION ----------
         mobile_number1 = (data.get("mobile_number1") or "").strip()
         mobile_number2 = (data.get("mobile_number2") or "").strip()
 
-        # V2 fix: move mobile_number2 to mobile_number1 if empty
-        if (not mobile_number1 or mobile_number1 == "") and mobile_number2 and mobile_number2 != "":
-            data["mobile_number1"] = mobile_number2
-            data["mobile_number2"] = None
-            mobile_number1 = mobile_number2
-            mobile_number2 = None
+        mobile_numbers = [m for m in [mobile_number1, mobile_number2] if m]
 
-        mobile_numbers = [mobile_number1, mobile_number2]
-        for mobile_number in mobile_numbers:
-            if mobile_number and mobile_number.strip():
-                if not re.match(r"^\d{7,14}$", mobile_number):
-                    raise serializers.ValidationError({"message": ["Mobile number(s) can only contain digits (0-9)."]})
+        # allow empty mobiles
+        if mobile_numbers:
 
-        person_id = self.context.get("person_id", 0)
-        query = None
-        for mobile_number in mobile_numbers:
-            if mobile_number:
-                if query:
-                    query |= Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number)
-                else:
-                    query = Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number)
-        
-        if query:
-            is_demo = self.context.get("is_demo", False)
-            # if is_demo:
-            #     mobile_exist = DemoPerson.objects.filter(query, is_deleted=False)
-            # else:
-            mobile_exist = Person.objects.filter(query, is_deleted=False)
-            
-            if person_id > 0:
-                mobile_exist = mobile_exist.exclude(id=person_id)
-            if mobile_exist.exists():
-                raise serializers.ValidationError({"message": ["Mobile number is already registered."]})
+            # format validation
+            for num in mobile_numbers:
+                if not re.match(r"^\d{7,14}$", num):
+                    raise serializers.ValidationError({
+                        "message": "Mobile number must be 7–14 digits only."
+                    })
 
+            # same number check
+            if len(mobile_numbers) == 2 and mobile_number1 == mobile_number2:
+                raise serializers.ValidationError({
+                    "message": "Mobile number 1 and 2 cannot be same."
+                })
+
+            # uniqueness check
+            person_id = self.instance.id if self.instance else None
+
+            query = Q()
+            for num in mobile_numbers:
+                query |= Q(mobile_number1=num) | Q(mobile_number2=num)
+
+            existing = Person.objects.filter(query, is_deleted=False)
+
+            if person_id:
+                existing = existing.exclude(id=person_id)
+
+            if existing.exists():
+                raise serializers.ValidationError({
+                    "message": "Mobile number already registered."
+                })
+
+        # ---------- DATE VALIDATION ----------
         date_of_birth_str = data.get("date_of_birth")
         if date_of_birth_str:
             try:
-                datetime.strptime(date_of_birth_str, "%Y-%m-%d %H:%M:%S.%f").date()
+                datetime.strptime(date_of_birth_str, "%Y-%m-%d %H:%M:%S.%f")
             except ValueError:
-                raise serializers.ValidationError({"message": "Invalid date format. Expected format: YYYY-MM-DD HH:MM:SS.SSS"})
+                raise serializers.ValidationError({
+                    "message": "Invalid date format. Expected YYYY-MM-DD HH:MM:SS.SSS"
+                })
 
         return data
 
@@ -821,7 +829,7 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
     def get_surname(self, obj):
         return obj.surname.name if obj.surname else ""
 
-class PersonGetSerializer(serializers.ModelSerializer):
+class PersonGetV4Serializer(serializers.ModelSerializer):
 
     city = serializers.SerializerMethodField(read_only=True, required=False)
     state = serializers.SerializerMethodField(read_only=True, required=False)
@@ -832,6 +840,7 @@ class PersonGetSerializer(serializers.ModelSerializer):
     village = serializers.SerializerMethodField(read_only=True, required=False)
     taluka = serializers.SerializerMethodField(read_only=True, required=False)
     district = serializers.SerializerMethodField(read_only=True, required=False)
+    samaj = serializers.SerializerMethodField(read_only=True)
 
     # password = serializers.SerializerMethodField    (read_only=True)
     class Meta:
@@ -909,31 +918,68 @@ class PersonGetSerializer(serializers.ModelSerializer):
             return obj.profile_pic.url
         else:
             return os.getenv("DEFAULT_PROFILE_PATH")
-
-
-    def get_taluka(self, obj):
-        if hasattr(obj, 'taluka') and obj.taluka is not None:
-            lang = self.context.get("lang", "en")
-            if lang == "guj":
-                return obj.taluka.guj_name
-            return obj.taluka.name
+        
+    def get_samaj(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj:
+            if lang == "guj" and obj.samaj.guj_name:
+                return obj.samaj.guj_name
+            return obj.samaj.name
         return ""
 
+    # def get_taluka(self, obj):
+    #     if hasattr(obj, 'taluka') and obj.taluka is not None:
+    #         lang = self.context.get("lang", "en")
+    #         if lang == "guj":
+    #             return obj.taluka.guj_name
+    #         return obj.taluka.name
+    #     return "".
+    def get_taluka(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka:
+            taluka = obj.samaj.village.taluka
+            if lang == "guj" and taluka.guj_name:
+                return taluka.guj_name
+            return taluka.name
+        return ""
+
+    # def get_district(self, obj):
+    #     if hasattr(obj, 'district') and obj.district is not None:
+    #         lang = self.context.get("lang", "en")
+    #         if lang == "guj":
+    #             return obj.district.guj_name
+    #         return obj.district.name
+    #     return ""
     def get_district(self, obj):
-        if hasattr(obj, 'district') and obj.district is not None:
-            lang = self.context.get("lang", "en")
-            if lang == "guj":
-                return obj.district.guj_name
-            return obj.district.name
+        lang = self.context.get("lang", "en")
+        if (
+            obj.samaj
+            and obj.samaj.village
+            and obj.samaj.village.taluka
+            and obj.samaj.village.taluka.district
+        ):
+            district = obj.samaj.village.taluka.district
+            if lang == "guj" and district.guj_name:
+                return district.guj_name
+            return district.name
         return ""
     
+    # def get_village(self, obj):
+    #     if hasattr(obj, 'village') and obj.village is not None:
+    #         lang = self.context.get("lang", "en")
+    #         if lang == "guj":
+    #             return obj.village.guj_name
+    #         return obj.village.name
+    #     return ""
+
     def get_village(self, obj):
-        if hasattr(obj, 'village') and obj.village is not None:
-            lang = self.context.get("lang", "en")
-            if lang == "guj":
-                return obj.village.guj_name
-            return obj.village.name
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village:
+            if lang == "guj" and obj.samaj.village.guj_name:
+                return obj.samaj.village.guj_name
+            return obj.samaj.village.name
         return ""
+    
 
     def get_surname(self, obj):
         if obj.surname is not None:
@@ -999,6 +1045,131 @@ class PersonGetSerializer(serializers.ModelSerializer):
                         if translate_data.out_of_address
                         else instance.out_of_address
                     )
+
+        return representation
+
+class PersonGetSerializer(serializers.ModelSerializer):
+
+    city = serializers.SerializerMethodField(read_only=True, required=False)
+    state = serializers.SerializerMethodField(read_only=True, required=False)
+    out_of_country = serializers.SerializerMethodField(read_only=True, required=False)
+    surname = serializers.SerializerMethodField(read_only=True, required=False)
+    profile = serializers.SerializerMethodField(read_only=True, required=False)
+    thumb_profile = serializers.SerializerMethodField(read_only=True, required=False)
+
+    # password = serializers.SerializerMethodField    (read_only=True)
+    class Meta:
+        model = Person
+        fields = [
+            "id",
+            "first_name",
+            "middle_name",
+            "address",
+            "is_same_as_son_address",
+            "is_same_as_father_address",
+            "out_of_address",
+            "date_of_birth",
+            "blood_group",
+            "city",
+            "state",
+            "out_of_country",
+            "flag_show",
+            "is_super_admin",
+            "mobile_number1",
+            "out_of_mobile",
+            "mobile_number2",
+            "profile",
+            "thumb_profile",
+            "status",
+            "surname",
+            "is_super_uper",
+            "is_admin",
+            "password",
+            "is_registered_directly",
+            "is_deleted",
+            "deleted_by",
+            "is_show_old_contact"
+        ]
+
+    # def get_password(self, obj) :
+    #     is_password_required = self.context.get('is_password_required', False)
+    #     if is_password_required :
+    #         if obj.is_admin:
+    #             return obj.password
+    #     return ""
+
+    def get_city(self, obj):
+        if obj.city is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.city.guj_name
+            return obj.city.name
+        return ""
+
+    def get_profile(self, obj):
+        if obj.profile:
+            return obj.profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_thumb_profile(self, obj):
+        if obj.thumb_profile and obj.thumb_profile != "":
+            return obj.thumb_profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_state(self, obj):
+        if obj.state is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.state.guj_name
+            return obj.state.name
+        return ""
+
+    def get_out_of_country(self, obj):
+        if obj.out_of_country is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.out_of_country.guj_name
+            return obj.out_of_country.name
+        return ""
+
+    def get_surname(self, obj):
+        if obj.surname is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.surname.guj_name
+            return obj.surname.name
+        return ""
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        lang = self.context.get("lang", "en")
+        if lang == "guj":
+            translate_data = TranslatePerson.objects.filter(
+                person_id=int(instance.id), is_deleted=False
+            ).first()
+            if translate_data:
+                representation["first_name"] = (
+                    translate_data.first_name
+                    if translate_data.first_name
+                    else instance.first_name
+                )
+                representation["middle_name"] = (
+                    translate_data.middle_name
+                    if translate_data.middle_name
+                    else instance.middle_name
+                )
+                representation["address"] = (
+                    translate_data.address
+                    if translate_data.address
+                    else instance.address
+                )
+                representation["out_of_address"] = (
+                    translate_data.out_of_address
+                    if translate_data.out_of_address
+                    else instance.out_of_address
+                )
         return representation
 
 class PersonGetSerializer2(PersonGetSerializer):
@@ -1007,6 +1178,41 @@ class PersonGetSerializer2(PersonGetSerializer):
 
     class Meta(PersonGetSerializer.Meta):
         fields = PersonGetSerializer.Meta.fields + [
+            "update_field_message"
+        ]
+
+    def get_update_field_message(self, obj):
+        """
+        obj.update_field_message is stored as string.
+        Example:
+        "[{'field': 'a', 'previous': None, 'new': 'x'}, ...]"
+        We return: "a, b, c"
+        """
+        if not obj.update_field_message:
+            return ""
+
+        try:
+            print("obj.update_field_message --- ", obj.update_field_message)
+            # Convert string into Python list
+            list_data = ast.literal_eval(obj.update_field_message)
+            print(list_data)
+            # Extract 'field' values
+            field_names = [item.get("field") for item in list_data if "field" in item]
+
+            # Return concatenated names
+            return ", ".join(field_names)
+
+        except Exception as e:
+            print(e)
+            # In case string is invalid or not parseable
+            return ""
+
+class PersonGetSerializer4(PersonGetV4Serializer):
+    
+    update_field_message = serializers.SerializerMethodField(read_only=True)
+
+    class Meta(PersonGetV4Serializer.Meta):
+        fields = PersonGetV4Serializer.Meta.fields + [
             "update_field_message"
         ]
 
