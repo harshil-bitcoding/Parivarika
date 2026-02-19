@@ -44,7 +44,9 @@ admin.site.register(User)
 
 @admin.register(Surname)
 class SurnameAdmin(admin.ModelAdmin):
-    list_display = ["id", "name", "top_member", "guj_name", "fix_order"]
+    list_display = ["id", "name", "samaj", "top_member", "guj_name", "fix_order"]
+    list_filter = ["samaj", "samaj__village"]
+    search_fields = ["name", "guj_name", "samaj__name"]
 
 @admin.register(Banner)
 class BannerAdmin(admin.ModelAdmin):
@@ -191,6 +193,7 @@ class PersonAdmin(ImportExportModelAdmin):
         "is_show_old_contact",
         "created_time",
         "is_deleted",
+        "is_demo",
     ]
     search_fields = [
         "id",
@@ -212,6 +215,7 @@ class PersonAdmin(ImportExportModelAdmin):
         "is_show_old_contact",
         "samaj",
         "samaj__village",
+        "is_demo",
     ]
     inlines = [TranslatePersonInline]
 
@@ -350,7 +354,8 @@ class VillageAdmin(admin.ModelAdmin):
 
 @admin.register(ParentChildRelation)
 class ParentChildRelationAdmin(admin.ModelAdmin):
-    list_display = ["id", "parent", "child", "created_user", "is_deleted"]
+    list_display = ["id", "parent", "child", "created_user", "is_deleted", "is_demo"]
+    list_filter = ["is_demo", "is_deleted"]
     search_fields = ["parent__first_name", "child__first_name"]
 
 @admin.register(RandomBanner)

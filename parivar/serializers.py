@@ -67,22 +67,19 @@ class TalukaSerializer(serializers.ModelSerializer):
             data["name"] = instance.guj_name
         return data
 
-
-
-
 class VillageSerializer(serializers.ModelSerializer):
     taluka_name = serializers.ReadOnlyField(source="taluka.name")
-    samaj_list = serializers.SerializerMethodField(read_only=True)
+    # samaj_list = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Village
-        fields = ["id", "name", "guj_name", "taluka", "taluka_name", "samaj_list"]
+        fields = ["id", "name", "guj_name", "taluka", "taluka_name"]
 
-    def get_samaj_list(self, obj):
-        from .models import Samaj
-        lang = self.context.get("lang", "en")
-        samaj_queryset = obj.samaj_list.all()
-        return SamajSerializer(samaj_queryset, many=True, context={"lang": lang}).data
+    # def get_samaj_list(self, obj):
+    #     from .models import Samaj
+    #     lang = self.context.get("lang", "en")
+    #     samaj_queryset = obj.samaj_list.all()
+    #     return SamajSerializer(samaj_queryset, many=True, context={"lang": lang}).data
 
     def to_representation(self, instance):
         lang = self.context.get("lang", "en")
@@ -103,7 +100,7 @@ class SamajSerializer(serializers.ModelSerializer):
     class Meta:
         model = Samaj
         fields = [
-            'id', 'name', 'guj_name', 'logo', 'referral_code', 'is_premium', 
+            'id', 'name', 'guj_name', 'logo', 'referral_code', 'is_premium', 'plan', 
             'village_name', 'taluka', 'taluka_name', 'district', 'district_name'
         ]
     
@@ -131,14 +128,14 @@ class SamajSerializer(serializers.ModelSerializer):
             return obj.village.taluka.district.name
         return None
 
-    # def get_village(self, obj):
-    #     return self.get_village_name(obj) or ""
+    def get_village(self, obj):
+        return self.get_village_name(obj) or ""
 
-    # def get_taluka(self, obj):
-    #     return self.get_taluka_name(obj) or ""
+    def get_taluka(self, obj):
+        return self.get_taluka_name(obj) or ""
 
-    # def get_district(self, obj):
-    #     return self.get_district_name(obj) or ""
+    def get_district(self, obj):
+        return self.get_district_name(obj) or ""
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -162,6 +159,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
     samaj_id = serializers.IntegerField(source='samaj.id', read_only=True)
     referal_code = serializers.CharField(source='samaj.referral_code', read_only=True)
     is_premium = serializers.BooleanField(source='samaj.is_premium', read_only=True)
+    plan = serializers.CharField(source='samaj.plan', read_only=True)
 
     class Meta:
         model = Person
@@ -197,6 +195,9 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "platform",
             # "relations",
             "is_super_uper",
+            "referal_code",
+            "is_premium",
+            "plan",
             "is_show_old_contact",
             "password",
             "is_deleted",
@@ -841,6 +842,7 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
     taluka = serializers.SerializerMethodField(read_only=True, required=False)
     district = serializers.SerializerMethodField(read_only=True, required=False)
     samaj = serializers.SerializerMethodField(read_only=True)
+    plan = serializers.SerializerMethodField(read_only=True)
 
     # password = serializers.SerializerMethodField    (read_only=True)
     class Meta:
@@ -877,6 +879,7 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
             "taluka",
             "district",
             "village",
+            "plan",
             "samaj",
         ]
 
@@ -989,6 +992,11 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
             return obj.surname.name
         return ""
     
+    def get_plan(self, obj):
+        if obj.samaj:
+            return obj.samaj.plan
+        return "free"
+
     def get_out_of_country(self, obj):
         if hasattr(obj, "out_of_country") and obj.out_of_country:
             lang = self.context.get("lang", "en")

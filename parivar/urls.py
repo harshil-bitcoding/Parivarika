@@ -238,6 +238,12 @@ urlpatterns = [
         name="get_surname_by_village",
     ),
 
+    path(
+        "api/v4/surname-by-samaj",
+        V4Views.GetSurnameBySamajView.as_view(),
+        name="get_surname_by_samaj",
+    ),
+
     path("api/v4/person", V4Views.V4PersonDetailView.as_view(), name="person_list_v4"),
 
     path("api/v4/person/<int:pk>", V4Views.V4PersonDetailView.as_view(), name="person_detail_v4"),
@@ -297,5 +303,11 @@ urlpatterns = [
     ),
     path("api/v4/samaj", V4Views.SamajListView.as_view(), name="samaj_list_v4"),
     path("api/v4/samaj-by-village", V4Views.SamajByVillageView.as_view(), name="samaj_by_village_v4"),
+
+    path(
+        "api/v4/upload-csv",
+        V4Views.CSVUploadAPIView.as_view(),
+        name="v4-upload-csv",
+    ),
 
 ]

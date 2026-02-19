@@ -16,6 +16,8 @@ import numpy as np
 import cv2
 import string
 import random
+
+from parivar.services import CSVImportService
 from ..models import (
     Person, District, Taluka, User, Village, Samaj, State, 
     TranslatePerson, Surname, ParentChildRelation, Country,
@@ -25,6 +27,7 @@ from ..models import (
 # from ..services import LocationResolverService, CSVImportService
 from django.conf import settings
 from notifications.models import PersonPlayerId
+from ..utils import get_person_queryset, get_relation_queryset
 from ..serializers import (
     DistrictSerializer,
     PersonGetSerializer4,
@@ -194,21 +197,28 @@ class SurnameByVillageView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Filter only login user's samaj
-        person_filter = Q(
-            samaj_id=login_person.samaj_id,
-            is_deleted=False,
-            flag_show=True
-        )
+        # Filter surnames linked to login user's specific samaj
+        surnames = Surname.objects.filter(samaj_id=login_person.samaj_id).order_by("name")
+        serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-        surname_ids = (
-            Person.objects
-            .filter(person_filter)
-            .values_list("surname_id", flat=True)
-            .distinct()
-        )
-
-        surnames = Surname.objects.filter(id__in=surname_ids).order_by("name")
+class GetSurnameBySamajView(APIView):
+    """Returns all surnames for a specific samaj."""
+    @swagger_auto_schema(
+        operation_description="Get surnames for a specific samaj",
+        manual_parameters=[
+            openapi.Parameter('samaj_id', openapi.IN_QUERY, description="Samaj ID", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter('lang', openapi.IN_QUERY, description="Language (en/guj)", type=openapi.TYPE_STRING),
+        ],
+        responses={200: openapi.Response(description="Surnames list", schema=SurnameSerializer(many=True)), 400: "Samaj ID is required"}
+    )
+    def get(self, request):
+        samaj_id = request.GET.get("samaj_id")
+        if not samaj_id:
+            return Response({"error": "Samaj ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        lang = request.GET.get("lang", "en")
+        surnames = Surname.objects.filter(samaj_id=samaj_id).order_by('name')
         serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -246,25 +256,10 @@ class V4LoginAPI(APIView):
         # is_demo = mobile_number == DEMO_MOBILE_NUMBER
 
         try:
-        #     if is_demo:
-        #         person = Person.objects.get(
-        #             Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number),
-        #             is_deleted=False,
-        #         )
-        #     else:
-                # is_demo_setting = mobile_number in getattr(settings, "DEMO_MOBILE_NUMBERS", [])
-                # if is_demo_setting:
-                #     person = DemoPerson.objects.get(
-                #         Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number),
-                #         is_deleted=False,
-                #     )
-                #     is_demo = True
-                # else:
-            person = Person.objects.get(
-                Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number),
-                is_deleted=False,
+            person = get_person_queryset(request).get(
+                Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number)
             )
-        except (Person.DoesNotExist, Person.DoesNotExist):
+        except Person.DoesNotExist:
             error_message = "સભ્ય નોંધાયેલ નથી" if lang == "guj" else "Person not found"
             return Response({"message": error_message}, status=status.HTTP_404_NOT_FOUND)
 
@@ -287,13 +282,43 @@ class V4LoginAPI(APIView):
         serializer = PersonV4Serializer(
             person, context={"lang": lang, "person_id": person.id}
         )
-        print("Person serializer data:", serializer.data)
-        admin_data = getadmincontact(
-            serializer.data.get("flag_show"), lang, serializer.data.get("surname")
-        )
-        
-        admin_data["person"] = serializer.data
-        
+
+        admin_list = {}
+        admin_list["person"] = serializer.data
+
+        login_surname = person.surname
+        login_samaj   = person.samaj
+        login_village = person.samaj.village if person.samaj else None
+
+        # STEP 1 — SAME SURNAME + SAME SAMAJ ADMINS
+        # (Since Surname is now localized to Samaj, filtering by both is redundant but safe)
+        admin_queryset = get_person_queryset(request).filter(
+            surname=login_surname,
+            samaj=login_samaj,
+            is_admin=True,
+            flag_show=True
+        ).exclude(id=person.id)
+
+
+        # STEP 2 — IF NO ADMIN → VILLAGE SUPER ADMIN
+        if admin_queryset.exists():
+
+            final_admin_queryset = admin_queryset
+
+        else:
+            final_admin_queryset = get_person_queryset(request).filter(
+                samaj__village=login_village,
+                is_super_admin=True,
+                flag_show=True
+            ).exclude(id=person.id)
+
+        # FINAL RESPONSE
+        admin_list["admin_data"] = PersonGetV4Serializer(
+            final_admin_queryset,
+            many=True,
+            context={"lang": lang}
+        ).data
+       
         # Add samaj data and referral code
         # admin_data["referral_code"] = ""
         # admin_data["samaj_list"] = []
@@ -316,20 +341,19 @@ class V4LoginAPI(APIView):
             #     pendingdata_count = 0
             # else:
             try:
-                person_obj = Person.objects.get(pk=admin_user_id, is_deleted=False)
+                person_obj = get_person_queryset(request).get(pk=admin_user_id)
                 print("Person object for pending data count:", type(person_obj))
                 if person_obj.is_admin or person_obj.is_super_admin:
                     if person_obj.is_super_admin:
-                        pending_users = Person.objects.filter(
-                            flag_show=False, is_deleted=False
+                        pending_users = get_person_queryset(request).filter(
+                            flag_show=False
                         )
                         print("Pending users for super admin:", pending_users)
                     else:
-                        pending_users = Person.objects.filter(
+                        pending_users = get_person_queryset(request).filter(
                             flag_show=False, 
                             samaj=person_obj.samaj,
-                            surname=person_obj.surname,
-                            is_deleted=False
+                            surname=person_obj.surname
                         ).exclude(id=person_obj.surname.top_member if person_obj.surname else None)
                     pendingdata_count = pending_users.count()
                     print("Pending data count:", pendingdata_count)
@@ -339,10 +363,11 @@ class V4LoginAPI(APIView):
                 pendingdata_count = 0
             
             response_data = {"pending-data": pendingdata_count}
-            response_data.update(admin_data)
+            response_data.update(admin_list)
             return Response(response_data, status=status.HTTP_200_OK)
             
-        return Response(admin_data, status=status.HTTP_200_OK)
+        return Response(admin_list, status=status.HTTP_200_OK)
+
 
 class AllVillageListView(APIView):
     authentication_classes = []
@@ -424,10 +449,9 @@ class V4RelationtreeAPIView(APIView):
             )
 
         if mobile_number:
-            login_person = Person.objects.filter(
+            login_person = get_person_queryset(request).filter(
                 Q(mobile_number1=mobile_number) |
                 Q(mobile_number2=mobile_number),
-                is_deleted=False
             ).select_related("samaj__village").first()
 
             if login_person and login_person.samaj and login_person.samaj.village_id:
@@ -440,13 +464,13 @@ class V4RelationtreeAPIView(APIView):
                 )
 
         try:
-            person = Person.objects.get(id=person_id, is_deleted=False)
+            person = get_person_queryset(request).get(id=person_id)
             surname = person.surname.id
             surname_topmember = Surname.objects.get(id=surname)
             topmember = surname_topmember.top_member
 
             # Initialize relations with the first query
-            relations = ParentChildRelation.objects.filter(child_id=person_id)
+            relations = get_relation_queryset(request).filter(child_id=person_id)
             parent_data_id = {
                 person_id
             }  # To keep track of already processed parent ids
@@ -460,15 +484,15 @@ class V4RelationtreeAPIView(APIView):
                     if parent_id not in parent_data_id:
                         parent_data_id.add(parent_id)
                         new_relations.extend(
-                            ParentChildRelation.objects.filter(
-                                child_id=parent_id, is_deleted=False
+                            get_relation_queryset(request).filter(
+                                child_id=parent_id
                             )
                         )
                 relations = new_relations
             
             person_data_queryset = (
-                Person.objects.filter(
-                    surname__id=surname, flag_show=True, is_deleted=False
+                get_person_queryset(request).filter(
+                    surname__id=surname, flag_show=True
                 )
                 .exclude(id__in=parent_data_id)
                 .annotate(
@@ -598,10 +622,9 @@ class V4ParentChildRelationDetailView(APIView):
                 )
 
             if mobile_number:
-                login_person = Person.objects.filter(
+                login_person = get_person_queryset(request).filter(
                     Q(mobile_number1=mobile_number) |
                     Q(mobile_number2=mobile_number),
-                    is_deleted=False
                 ).select_related("samaj__village").first()
 
                 if login_person and login_person.samaj and login_person.samaj.village_id:
@@ -615,7 +638,7 @@ class V4ParentChildRelationDetailView(APIView):
 
             # Query
             queryset = (
-                Person.objects.filter(surname__id=surnameid, is_deleted=False)
+                get_person_queryset(request).filter(surname__id=surnameid)
                 .order_by("date_of_birth")
                 .annotate(
                     translated_first_name=Case(
@@ -700,10 +723,9 @@ class V4ParentChildRelationDetailView(APIView):
 
             total_count = len(results)
             relation_data = (
-                ParentChildRelation.objects.filter(
+                get_relation_queryset(request).filter(
                     Q(parent__surname__id=surnameid)
                     and Q(child__surname__id=surnameid),
-                    is_deleted=False,
                 )
                 .select_related("parent", "child")
                 .order_by("parent__date_of_birth", "child__date_of_birth")
@@ -983,6 +1005,7 @@ class V4PersonDetailView(APIView):
             'mobile_number2': mobile_number2,
             'status': status_name,
             'surname': surname,
+            'samaj': samaj_id,
             'is_admin': is_admin,
             'is_registered_directly': is_registered_directly
         }
@@ -1071,6 +1094,7 @@ class V4PersonDetailView(APIView):
         status_name = request.data.get('status')
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
+        samaj_id = request.data.get('samaj', person.samaj_id)
         person_data = {
             'first_name' : person.first_name if lang == 'en' else first_name,
             'middle_name' : person.middle_name if lang == 'en' else middle_name,
@@ -1086,6 +1110,7 @@ class V4PersonDetailView(APIView):
             'mobile_number2': mobile_number2,
             'status': status_name,
             'surname': surname,
+            'samaj': samaj_id,
             'is_admin': is_admin,
             'is_registered_directly': is_registered_directly
         }
@@ -1639,6 +1664,7 @@ class V4AdminPersonDetailView(APIView):
         status_name = request.data.get('status')
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
+        samaj_id = request.data.get('samaj')
         person_data = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -1654,6 +1680,7 @@ class V4AdminPersonDetailView(APIView):
             'mobile_number2': mobile_number2,
             'status': status_name,
             'surname': surname,
+            'samaj': samaj_id,
             'is_admin': is_admin,
             'is_registered_directly': is_registered_directly
         }
@@ -1742,10 +1769,10 @@ class V4AdminPersonDetailView(APIView):
             flag_show = True
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
-
         status_name = request.data.get('status')
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
+        samaj_id = request.data.get('samaj')
         person_data = {
             'first_name' : first_name,
             'middle_name' : middle_name,
@@ -2117,3 +2144,46 @@ class V4PendingApproveDetailView(APIView):
                 {"message": f"Failed to delete the for this record"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        
+from rest_framework.parsers import MultiPartParser, FormParser
+
+class CSVUploadAPIView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    parser_classes = [MultiPartParser, FormParser]
+
+    def clean_val(self, val):
+        if not val:
+            return ""
+        val = str(val).strip()
+        # Remove Excel formula wrapper ="value"
+        if val.startswith('="') and val.endswith('"'):
+            return val[2:-1]
+        # Remove single quote prefix
+        if val.startswith("'"):
+            return val[1:]
+        return val
+
+    @swagger_auto_schema(
+        operation_description="Upload members via CSV/XLSX with strict location matching. Supports Dashboard sheet for referral codes.",
+        manual_parameters=[
+            openapi.Parameter('file', openapi.IN_FORM, type=openapi.TYPE_FILE, description="CSV or XLSX File", required=True)
+        ],
+        responses={200: "Processed successfully", 400: "Invalid data"}
+    )
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = CSVImportService.process_file(uploaded_file, request=request)
+        
+        if "error" in result:
+            return Response({"error": result["error"]}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "message": f"Processed successfully. Created {result['created']} and updated {result['updated']} entries.",
+            "created": result['created'],
+            "updated": result['updated'],
+            "bug_file": result['bug_file_url']
+        }, status=status.HTTP_200_OK)

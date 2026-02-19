@@ -22,13 +22,19 @@ class User(AbstractUser):
 
 class Surname(models.Model):
     id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=255, blank=True, unique=True)
+    name = models.CharField(max_length=255, blank=True)
     top_member = models.CharField(max_length=100, default="", blank=True)
     guj_name = models.CharField(max_length=255, blank=True, null=True)
     fix_order = models.CharField(max_length=10, null=True, blank=True)
+    samaj = models.ForeignKey(
+        "Samaj", on_delete=models.CASCADE, null=True, blank=True, related_name="surnames"
+    )
 
     def __str__(self):
-        return self.name
+        return f"{self.name} - {self.samaj.name if self.samaj else 'No Samaj'}"
+
+    class Meta:
+        unique_together = ("name", "samaj")
 
 
 class BloodGroup(models.Model):
@@ -121,6 +127,12 @@ class Village(models.Model):
 
 class Samaj(models.Model):
     """Community/Samaj model representing surname-based communities"""
+
+    CHOISE_PLAN = (
+        ("free", "Free"),
+        ("standard", "Standard")
+    )
+
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, help_text="English samaj name")
     guj_name = models.CharField(max_length=255, blank=True, null=True, help_text="Gujarati samaj name")
@@ -132,11 +144,14 @@ class Samaj(models.Model):
     village = models.ForeignKey(
         Village, related_name="samaj_list", on_delete=models.CASCADE, null=True, blank=True
     )
+    plan = models.CharField(choices=CHOISE_PLAN, default="free")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.name} - {self.village.name if self.village else 'No Village'}"
+        if self.village:
+            return f"{self.name} - {self.village.name} ({self.village.taluka.name} - {self.village.taluka.district.name})"
+        return f"{self.name} - No Village"
 
     class Meta:
         verbose_name_plural = "Samaj"
@@ -180,7 +195,7 @@ class Person(models.Model):
     guj_middle_name = models.CharField(max_length=100, blank=True, null=True)
     child_flag = models.BooleanField(default=False)
     flag_show = models.BooleanField(default=False)
-    is_demo = models.BooleanField(default=False)
+    is_demo = models.BooleanField(default=False, db_index=True)
     profile = models.ImageField(
         upload_to="profiles/", blank=True, null=True, max_length=512
     )
@@ -367,6 +382,7 @@ class ParentChildRelation(models.Model):
         editable=False,
     )
     is_deleted = models.BooleanField(default=False)
+    is_demo = models.BooleanField(default=False, db_index=True)
     modified = models.DateTimeField(
         auto_now=True,
         null=True,
