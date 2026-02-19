@@ -250,7 +250,7 @@ urlpatterns = [
 
     path(
         "api/v4/get-person-by-surname",
-        V3Views.PersonBySurnameViewV3.as_view(),
+        V4Views.PersonBySurnameViewV4.as_view(),
         name="get-person-by-surname",
     ),
     path(

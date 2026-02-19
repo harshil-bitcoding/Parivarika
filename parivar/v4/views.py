@@ -434,7 +434,7 @@ class TalukaDistrictView(APIView):
             return Response({"error": "Taluka not found"}, status=status.HTTP_404_NOT_FOUND)
         
 
-class V4RelationtreeAPIView(APIView):
+class  V4RelationtreeAPIView(APIView):
 
     def get(self, request):
         lang = request.GET.get("lang", "en")
@@ -2144,6 +2144,123 @@ class V4PendingApproveDetailView(APIView):
                 {"message": f"Failed to delete the for this record"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        
+class PersonBySurnameViewV4(APIView):
+    def post(self, request):
+        surname = request.data.get("surname")
+        lang = request.data.get("lang", "en")
+        is_father_selection = request.data.get("is_father_selection", "").lower()
+        mobile_header = request.headers.get("X-Mobile-Number")
+
+        if not surname:
+            message = "અટક જરૂરી છે" if lang == "guj" else "Surname ID is required"
+            return JsonResponse({"message": message, "data": []}, status=400)
+
+        # Base queryset
+        queryset = Person.objects.filter(surname__id=surname, is_deleted=False, flag_show=True)
+
+        # Filter by Samaj if mobile header is provided
+        if mobile_header:
+            try:
+                request_person = Person.objects.filter(
+                    Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header),
+                    is_deleted=False
+                ).first()
+                if request_person and request_person.samaj:
+                    queryset = queryset.filter(samaj=request_person.samaj)
+            except Exception:
+                pass
+
+        persons = (
+            queryset.exclude(
+                id__in=Surname.objects.annotate(
+                    top_member_as_int=Cast("top_member", IntegerField())
+                ).values_list("top_member_as_int", flat=True)
+            )
+            .select_related("surname")
+            .prefetch_related("translateperson")
+            .distinct()
+            .values(
+                "id",
+                "first_name",
+                "translateperson__first_name",
+                "middle_name",
+                "translateperson__middle_name",
+                "date_of_birth",
+                "mobile_number1",
+                "mobile_number2",
+                "flag_show",
+                "profile",
+                "is_admin",
+                "surname",
+                "surname__name",
+                "surname__guj_name",
+                "thumb_profile",
+            )
+        )
+
+        if is_father_selection != "true":
+            persons = persons.filter(
+                Q(mobile_number1__isnull=False) | Q(mobile_number2__isnull=False)
+            ).exclude(mobile_number1="")
+
+        if persons.exists():
+            persons = (
+                persons.order_by("first_name", "middle_name")
+                if lang == "en"
+                else persons.order_by(
+                    "translateperson__first_name", "translateperson__middle_name"
+                )
+            )
+            # Execute the query and fetch results
+
+            for person in persons:
+                # Swap the values between first_name and middle_name
+                if lang != "en":
+                    person["surname"] = person["surname__guj_name"]
+                    (
+                        person["first_name"],
+                        person["middle_name"],
+                        person["trans_first_name"],
+                        person["trans_middle_name"],
+                    ) = (
+                        person["translateperson__first_name"],
+                        person["translateperson__middle_name"],
+                        person["first_name"],
+                        person["middle_name"],
+                    )
+                else:
+                    person["surname"] = person["surname__name"]
+                    person["trans_first_name"], person["trans_middle_name"] = (
+                        person["translateperson__first_name"],
+                        person["translateperson__middle_name"],
+                    )
+                if (
+                    person["profile"]
+                    and person["profile"] != "null"
+                    and person["profile"] != ""
+                ):
+                    person["profile"] = f"/media/{(person['profile'])}"
+                else:
+                    person["profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+                if (
+                    person["thumb_profile"]
+                    and person["thumb_profile"] != "null"
+                    and person["thumb_profile"] != ""
+                ):
+                    person["thumb_profile"] = f"/media/{(person['thumb_profile'])}"
+                else:
+                    person["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+                person.pop("translateperson__first_name")
+                person.pop("translateperson__middle_name")
+                person.pop("surname__name")
+                person.pop("surname__guj_name")
+
+            results = list(persons)
+
+            return JsonResponse({"data": results}, status=200)
+
+        return JsonResponse({"data": []}, status=200)
         
 from rest_framework.parsers import MultiPartParser, FormParser
 

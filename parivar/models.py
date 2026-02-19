@@ -31,7 +31,12 @@ class Surname(models.Model):
     )
 
     def __str__(self):
-        return f"{self.name} - {self.samaj.name if self.samaj else 'No Samaj'}"
+        if self.samaj:
+            if self.samaj.village:
+                v = self.samaj.village
+                return f"{self.name} - {self.samaj.name} - {v.name} ({v.taluka.name} - {v.taluka.district.name})"
+            return f"{self.name} - {self.samaj.name}"
+        return f"{self.name} - No Samaj"
 
     class Meta:
         unique_together = ("name", "samaj")
@@ -347,7 +352,7 @@ class Person(models.Model):
 
 class TranslatePerson(models.Model):
     person_id = models.ForeignKey(
-        Person, on_delete=models.CASCADE, blank=True, null=True
+        Person, on_delete=models.CASCADE, blank=True, null=True, related_name="translateperson"
     )
     first_name = models.CharField(max_length=500, blank=True, null=True)
     middle_name = models.CharField(max_length=500, blank=True, null=True)
