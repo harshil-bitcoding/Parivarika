@@ -2444,7 +2444,19 @@ class V4BannerDetailView(APIView):
 
     def delete(self, request, pk):
         try:
-            banner = get_object_or_404(Banner, pk=pk)
+            banner = Banner.objects.get(pk=pk)
+        except Banner.DoesNotExist:
+            return Response(
+                {"message": f"Banner record with ID {pk} does not exist."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"message": f"Failed to fetch Banner record: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+        try:
             if banner.is_deleted == False:
                 banner.is_active = False
                 banner.is_deleted = True
@@ -2460,9 +2472,7 @@ class V4BannerDetailView(APIView):
                 )
         except Exception as e:
             return Response(
-                {
-                    "message": f"Failed to delete the Banner record with ID {pk}: {str(e)}"
-                },
+                {"message": f"Failed to delete the Banner record: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
