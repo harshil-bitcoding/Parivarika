@@ -160,6 +160,8 @@ class PersonV4Serializer(serializers.ModelSerializer):
     referal_code = serializers.CharField(source='samaj.referral_code', read_only=True)
     is_premium = serializers.BooleanField(source='samaj.is_premium', read_only=True)
     plan = serializers.CharField(source='samaj.plan', read_only=True)
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
 
     class Meta:
         model = Person
@@ -205,6 +207,8 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "samaj_id",
             "referal_code",
             "is_premium",
+            "translated_first_name",
+            "translated_middle_name",
         ]
 
     def get_surname(self, obj):
@@ -262,6 +266,18 @@ class PersonV4Serializer(serializers.ModelSerializer):
                 return obj.out_of_country.guj_name
             return obj.out_of_country.name
         return ""
+
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
 
     def get_relations(self, obj):
         # is_demo = self.context.get("is_demo", False)
@@ -456,6 +472,21 @@ class PersonSerializer(serializers.ModelSerializer):
             "platform",
         ]
 
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
+
 # class DemoPersonSerializer(PersonSerializer):
 #     class Meta(PersonSerializer.Meta):
 #         model = DemoPerson
@@ -620,6 +651,8 @@ class PersonSerializerV2(serializers.ModelSerializer):
             "id",
             "first_name",
             "middle_name",
+            "translated_first_name",
+            "translated_middle_name",
             "address",
             "is_same_as_father_address",
             "is_same_as_son_address",
@@ -644,6 +677,21 @@ class PersonSerializerV2(serializers.ModelSerializer):
             "city": {"required": False, "allow_null": True},
             "state": {"required": False, "allow_null": True},
         }
+
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
 
     def validate(self, data):
 
@@ -740,6 +788,8 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
     surname = serializers.SerializerMethodField(read_only=True, required=False)
     profile = serializers.SerializerMethodField(read_only=True, required=False)
     thumb_profile = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
 
     class Meta:
         model = Person
@@ -767,9 +817,10 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             "is_registered_directly",
             "guj_first_name",
             "guj_middle_name",
-            "guj_address",
             "guj_out_of_address",
             "out_of_mobile",
+            "translated_first_name",
+            "translated_middle_name",
         ]
 
     def get_profile(self, obj):
@@ -830,6 +881,12 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
     def get_surname(self, obj):
         return obj.surname.name if obj.surname else ""
 
+    def get_translated_first_name(self, obj):
+        return self.get_guj_first_name(obj) or obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        return self.get_guj_middle_name(obj) or obj.middle_name
+
 class PersonGetV4Serializer(serializers.ModelSerializer):
 
     city = serializers.SerializerMethodField(read_only=True, required=False)
@@ -843,6 +900,8 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
     district = serializers.SerializerMethodField(read_only=True, required=False)
     samaj = serializers.SerializerMethodField(read_only=True)
     plan = serializers.SerializerMethodField(read_only=True)
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
 
     # password = serializers.SerializerMethodField    (read_only=True)
     class Meta:
@@ -881,6 +940,8 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
             "village",
             "plan",
             "samaj",
+            "translated_first_name",
+            "translated_middle_name",
         ]
 
     # def get_password(self, obj) :
@@ -1005,6 +1066,18 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
             return obj.out_of_country.name
         return ""
 
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
+
     def to_representation(self, instance):
         # Handle missing fields for DemoPerson before serialization
         if self.context.get("is_demo", False):
@@ -1096,7 +1169,9 @@ class PersonGetSerializer(serializers.ModelSerializer):
             "is_registered_directly",
             "is_deleted",
             "deleted_by",
-            "is_show_old_contact"
+            "is_show_old_contact",
+            "translated_first_name",
+            "translated_middle_name",
         ]
 
     # def get_password(self, obj) :
@@ -1149,6 +1224,21 @@ class PersonGetSerializer(serializers.ModelSerializer):
                 return obj.surname.guj_name
             return obj.surname.name
         return ""
+
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -1445,7 +1535,22 @@ class GetParentChildRelationSerializer(serializers.ModelSerializer):
 class GetTreeRelationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ParentChildRelation
-        fields = ["id", "parent", "child"]
+        fields = ["id", "parent", "child", "translated_first_name", "translated_middle_name"]
+
+    translated_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    translated_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+
+    def get_translated_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data and translate_data.first_name else obj.first_name
+
+    def get_translated_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data and translate_data.middle_name else obj.middle_name
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
