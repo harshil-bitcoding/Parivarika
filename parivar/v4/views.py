@@ -601,12 +601,12 @@ class V4ParentChildRelationDetailView(APIView):
                 serializer.save()
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+ 
     def get(self, request, surnameid=None):
         if surnameid:
             try:
                 surnameid = int(surnameid)
-
+ 
             except ValueError:
                 return Response(
                     {"error": "Invalid surname ID"}, status=status.HTTP_400_BAD_REQUEST
@@ -614,35 +614,35 @@ class V4ParentChildRelationDetailView(APIView):
             lang = request.GET.get("lang", "en")
             mobile_number = request.headers.get("X-Mobile-Number")
             login_village_id = None
-
+ 
             if not mobile_number:
                 return Response(
                     {"error": "Mobile number is required"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
+ 
             if mobile_number:
                 login_person = get_person_queryset(request).filter(
                     Q(mobile_number1=mobile_number) |
                     Q(mobile_number2=mobile_number),
                 ).select_related("samaj__village").first()
-
+ 
                 if login_person and login_person.samaj and login_person.samaj.village_id:
                     login_village_id = login_person.samaj.village_id
-
+ 
                 if not login_village_id:
                     return Response(
                         {"error": "Login person's village information is required"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
+ 
             # Query
             queryset = (
                 get_person_queryset(request).filter(surname__id=surnameid)
                 .order_by("date_of_birth")
                 .annotate(
                     translated_first_name=Case(
-
+ 
                         # Gujarati translated name exists
                         When(
                             Q(
@@ -658,7 +658,7 @@ class V4ParentChildRelationDetailView(APIView):
                                 output_field=CharField(),
                             ),
                         ),
-
+ 
                         # English name outside village
                         When(
                             ~Q(samaj__village_id=login_village_id),
@@ -670,7 +670,7 @@ class V4ParentChildRelationDetailView(APIView):
                                 output_field=CharField(),
                             ),
                         ),
-
+ 
                         # Default (same village)
                         default=Case(
                             When(
@@ -682,7 +682,7 @@ class V4ParentChildRelationDetailView(APIView):
                             ),
                             default=F("first_name"),
                         ),
-
+ 
                         output_field=CharField(),
                     ),
                     translated_middle_name=Case(
@@ -701,7 +701,7 @@ class V4ParentChildRelationDetailView(APIView):
                 .select_related("surname")
                 .prefetch_related("translateperson")
             )
-
+ 
             # Execute the query and fetch results
             results = list(
                 queryset.values(
@@ -720,7 +720,7 @@ class V4ParentChildRelationDetailView(APIView):
                     "emoji",
                 )
             )
-
+ 
             total_count = len(results)
             relation_data = (
                 get_relation_queryset(request).filter(
@@ -738,7 +738,7 @@ class V4ParentChildRelationDetailView(APIView):
                     if surname_data.exists():
                         surname_data = surname_data.first()
                         top_member = int(
-                            GetSurnameSerializer(surname_data).data.get("top_member", 0)
+                            GetSurnameSerializer(surname_data).data.get("top_member", 0) or 0
                         )
                         filtered_surname_results = filter(
                             lambda person: person["id"] == top_member, results
@@ -805,22 +805,22 @@ class V4ParentChildRelationDetailView(APIView):
                                         child_relations["thumb_profile"] = default_path
                                 else:
                                     child_relations["thumb_profile"] = default_path
-                            if child_relations["flag_show"] == True:
-                                j["child"] = child_relations
-                                j["parent"] = parent_relations
-                                parent = j.get("parent")
-                                flag_show = None
-                                if parent and isinstance(parent, dict):
-                                    flag_show = parent.get("flag_show")
-                                if flag_show is not True:
-                                    j["parent"] = surname_relations
-                                data2.append(j)
+                                if child_relations["flag_show"] == True:
+                                    j["child"] = child_relations
+                                    j["parent"] = parent_relations
+                                    parent = j.get("parent")
+                                    flag_show = None
+                                    if parent and isinstance(parent, dict):
+                                        flag_show = parent.get("flag_show")
+                                    if flag_show is not True:
+                                        j["parent"] = surname_relations
+                                    data2.append(j)
             return Response(
                 {"total_count": total_count, "data": data2}, status=status.HTTP_200_OK
             )
         else:
             return Response({"total_count": 0, "data": []}, status=status.HTTP_200_OK)
-
+ 
     def get_parent_child_relation(self, param, dictionary, lang):
         parent_child_relation = ParentChildRelation.objects.filter(
             Q(parent_id=param) | Q(child_id=param), is_deleted=False
@@ -848,7 +848,7 @@ class V4ParentChildRelationDetailView(APIView):
                     self.get_parent_child_relation(
                         int(child.get("child", None).get("id", None)), dictionary, lang
                     )
-
+ 
     def put(self, request, pk=None):
         created_user_id = request.data.get("created_user")
         lang = request.data.get("lang")
@@ -966,8 +966,8 @@ class V4PersonDetailView(APIView):
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
         father = request.data.get('father', 0)        
         top_member = 0
-        if persons_surname_wise: 
-            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+        if persons_surname_wise:
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0 :
                 father = top_member
         children = request.data.get('child', [])
@@ -1032,7 +1032,7 @@ class V4PersonDetailView(APIView):
                 # Handle potential duplicate username or other database integrity errors
                 print(f"IntegrityError encountered: {e}")
             parent_serializer = ParentChildRelationSerializer(data={
-                                'parent': father, 
+                                'parent': father,
                                 'child': persons.id,
                                 'created_user': persons.id
                             })
@@ -1040,7 +1040,7 @@ class V4PersonDetailView(APIView):
                 parent_serializer.save()
             for child in children :
                 child_serializer = ParentChildRelationSerializer(data={
-                                'child': child, 
+                                'child': child,
                                 'parent': persons.id,
                                 'created_user': persons.id
                             })
@@ -1048,12 +1048,12 @@ class V4PersonDetailView(APIView):
                     child_serializer.save()
             if (lang != "en") :   
                 person_translate_data = {
-                    'first_name': first_name, 
+                    'first_name': first_name,
                     'person_id': persons.id,
                     'middle_name': middle_name,
                     'address': address,
                     'out_of_address':out_of_address,
-
+ 
                     'language': lang
                 }
                 person_translate_serializer = TranslatePersonSerializer(data=person_translate_data)
@@ -1069,10 +1069,10 @@ class V4PersonDetailView(APIView):
             return JsonResponse({'message': 'Person not found'}, status=status.HTTP_400_BAD_REQUEST)
         surname = request.data.get('surname', 0)
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
-        father = request.data.get('father', 0) 
+        father = request.data.get('father', 0)
         top_member = 0
-        if persons_surname_wise: 
-            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+        if persons_surname_wise:
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0:
                 father = top_member
         children = request.data.get('child', [])
@@ -1114,24 +1114,24 @@ class V4PersonDetailView(APIView):
             'is_admin': is_admin,
             'is_registered_directly': is_registered_directly
         }
-
+ 
         ignore_fields = ['update_field_message', 'id', 'flag_show', 'is_admin', 'is_registered_directly']
         update_field_message = []
         for field, new_value in person_data.items():
             if field in ignore_fields:
                 continue
             old_value = getattr(person, field, None)
-
+ 
             if hasattr(old_value, 'id'):
                 old_value = old_value.id
-
+ 
             if old_value != new_value:
                 update_field_message.append({
                     'field': field,
                     'previous': old_value,
                     'new': new_value
                 })
-
+ 
         if update_field_message:
             person.update_field_message = str(update_field_message)
             
@@ -1142,10 +1142,10 @@ class V4PersonDetailView(APIView):
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=400)
             persons = serializer.save()
-
+ 
             father_data = ParentChildRelation.objects.filter(child=persons.id)
-            data = { 
-                    'parent': father, 
+            data = {
+                    'parent': father,
                     'child': persons.id,
                     'created_user': persons.id
                 }
@@ -1159,8 +1159,8 @@ class V4PersonDetailView(APIView):
                 father_data_serializer.save()
             for child in children:
                 child_data = ParentChildRelation.objects.filter(child=child)
-                data = { 
-                    'child': child, 
+                data = {
+                    'child': child,
                     'parent': persons.id,
                     'created_user': persons.id
                 }
@@ -1197,7 +1197,7 @@ class V4PersonDetailView(APIView):
             }, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+ 
     def delete(self, request, pk):
         person = get_object_or_404(Person, pk=pk)
         try:
@@ -1571,7 +1571,7 @@ class V4AdminPersonDetailView(APIView):
             return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         try:
             admin_person = Person.objects.get(pk=admin_user_id)
-        except Person.DoesNotExist: 
+        except Person.DoesNotExist:
             # logger.error(f'Person with ID {admin_user_id} not found')
             return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         if not admin_person.is_admin and not admin_person.is_super_admin:
@@ -1618,8 +1618,8 @@ class V4AdminPersonDetailView(APIView):
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
         father = request.data.get('father', 0)        
         top_member = 0
-        if persons_surname_wise: 
-            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+        if persons_surname_wise:
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0 :
                 father = top_member
         children = request.data.get('child', [])
@@ -1688,24 +1688,24 @@ class V4AdminPersonDetailView(APIView):
         if serializer.is_valid():
             persons = serializer.save()
             parent_serializer = ParentChildRelationSerializer(data={
-                                'parent': father, 
+                                'parent': father,
                                 'child': persons.id,
                                 'created_user': persons.id
                             })
             if parent_serializer.is_valid():
                 parent_serializer.save()
-
+ 
             for child in children :
                 child_serializer = ParentChildRelationSerializer(data={
-                                'child': child, 
+                                'child': child,
                                 'parent': persons.id,
                                 'created_user': persons.id
                             })
-
+ 
                 if child_serializer.is_valid():
                     child_serializer.save()
             person_translate_data = {
-                'first_name': guj_first_name, 
+                'first_name': guj_first_name,
                 'person_id': persons.id,
                 'middle_name': guj_middle_name,
                 'out_of_address': guj_out_of_address,
@@ -1741,10 +1741,10 @@ class V4AdminPersonDetailView(APIView):
             return JsonResponse({'message': 'Person not found'}, status=status.HTTP_400_BAD_REQUEST)
         surname = request.data.get('surname', 0)
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
-        father = request.data.get('father', 0) 
+        father = request.data.get('father', 0)
         top_member = 0
-        if persons_surname_wise: 
-            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+        if persons_surname_wise:
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0:
                 father = top_member
         children = request.data.get('child', [])
@@ -1801,20 +1801,20 @@ class V4AdminPersonDetailView(APIView):
                     return JsonResponse({'message': 'Children already exist'}, status=status.HTTP_400_BAD_REQUEST)
             
             persons = serializer.save()
-
+ 
             father_data = ParentChildRelation.objects.filter(child=persons.id)
             if father_data.exists():
                 father_data.update(child=persons.id, parent=father)
             else :
                 ParentChildRelation.objects.create(child=persons.id, parent=father, created_user=admin_user_id)
-
+ 
             for child in children:
                 child_data = ParentChildRelation.objects.filter(child=child)
                 if child_data.exists() :
                     child_data.update(parent=persons.id, child=child)
                 else :
                     ParentChildRelation.objects.create(child=child, parent=persons.id, created_user=admin_user_id)
-
+ 
             if len(children) > 0:       
                 remove_child_person = ParentChildRelation.objects.filter(parent=persons.id).exclude(child__in=children)
                 if remove_child_person.exists():
@@ -1836,10 +1836,10 @@ class V4SearchbyPerson(APIView):
         lang = request.data.get("lang", "en")
         search = request.data.get("search", "")
         person_id = request.data.get("person_id")
-
+ 
         if search == "":
             return JsonResponse({"data": []}, status=200)
-
+ 
         # Get logged in person
         try:
             login_person = Person.objects.select_related(
@@ -1847,7 +1847,7 @@ class V4SearchbyPerson(APIView):
             ).get(id=person_id, is_deleted=False)
         except Person.DoesNotExist:
             return JsonResponse({"message": "Person not found"}, status=404)
-
+ 
         # Build search query
         search_keywords = search.split(" ")
         search_q = Q()
@@ -1861,7 +1861,7 @@ class V4SearchbyPerson(APIView):
                 | Q(surname__guj_name__icontains=keyword)
                 | Q(translateperson__first_name__icontains=keyword)
             )
-
+ 
         # Samaj + Village restriction
         base_filter = Q(
             samaj_id=login_person.samaj_id,
@@ -1869,11 +1869,13 @@ class V4SearchbyPerson(APIView):
             flag_show=True,
             is_deleted=False,
         )
-
+ 
         persons = (
             Person.objects.filter(search_q & base_filter)
-            .exclude(
-                id__in=Surname.objects.annotate(
+             .exclude(
+                id__in=Surname.objects.exclude(
+                    top_member__in=["", None]
+                ).annotate(
                     top_member_as_int=Cast("top_member", IntegerField())
                 ).values_list("top_member_as_int", flat=True)
             )
@@ -1887,11 +1889,11 @@ class V4SearchbyPerson(APIView):
                 "surname__name",
             )
         )
-
+ 
         data = PersonGetDataSortSerializer(
             persons, many=True, context={"lang": lang}
         )
-
+ 
         return JsonResponse({"data": data.data}, status=200)
 
 class V4PendingApproveDetailView(APIView):
@@ -2149,16 +2151,16 @@ class PersonBySurnameViewV4(APIView):
     def post(self, request):
         surname = request.data.get("surname")
         lang = request.data.get("lang", "en")
-        is_father_selection = request.data.get("is_father_selection", "").lower()
+        is_father_selection = str(request.data.get("is_father_selection", "")).lower()
         mobile_header = request.headers.get("X-Mobile-Number")
-
+ 
         if not surname:
             message = "અટક જરૂરી છે" if lang == "guj" else "Surname ID is required"
             return JsonResponse({"message": message, "data": []}, status=400)
-
+ 
         # Base queryset
         queryset = Person.objects.filter(surname__id=surname, is_deleted=False, flag_show=True)
-
+ 
         # Filter by Samaj if mobile header is provided
         if mobile_header:
             try:
@@ -2170,10 +2172,12 @@ class PersonBySurnameViewV4(APIView):
                     queryset = queryset.filter(samaj=request_person.samaj)
             except Exception:
                 pass
-
+ 
         persons = (
             queryset.exclude(
-                id__in=Surname.objects.annotate(
+                id__in=Surname.objects.exclude(
+                    top_member__in=["", None]
+                ).annotate(
                     top_member_as_int=Cast("top_member", IntegerField())
                 ).values_list("top_member_as_int", flat=True)
             )
@@ -2198,12 +2202,12 @@ class PersonBySurnameViewV4(APIView):
                 "thumb_profile",
             )
         )
-
+ 
         if is_father_selection != "true":
             persons = persons.filter(
                 Q(mobile_number1__isnull=False) | Q(mobile_number2__isnull=False)
             ).exclude(mobile_number1="")
-
+ 
         if persons.exists():
             persons = (
                 persons.order_by("first_name", "middle_name")
@@ -2213,7 +2217,7 @@ class PersonBySurnameViewV4(APIView):
                 )
             )
             # Execute the query and fetch results
-
+ 
             for person in persons:
                 # Swap the values between first_name and middle_name
                 if lang != "en":
@@ -2255,11 +2259,11 @@ class PersonBySurnameViewV4(APIView):
                 person.pop("translateperson__middle_name")
                 person.pop("surname__name")
                 person.pop("surname__guj_name")
-
+ 
             results = list(persons)
-
+ 
             return JsonResponse({"data": results}, status=200)
-
+ 
         return JsonResponse({"data": []}, status=200)
         
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -2304,3 +2308,191 @@ class CSVUploadAPIView(APIView):
             "updated": result['updated'],
             "bug_file": result['bug_file_url']
         }, status=status.HTTP_200_OK)
+    
+class V4BannerDetailView(APIView):
+    def get(self, request):
+        today = datetime.now().date()
+        Banner.objects.filter(
+            expire_date__lt=today, is_active=True, is_deleted=False
+        ).update(is_active=False)
+        active_banner = Banner.objects.filter(
+            is_active=True, expire_date__gte=today, is_deleted=False
+        ).order_by("expire_date")
+        expire_banner = Banner.objects.filter(
+            is_active=False, expire_date__lt=today, is_deleted=False
+        ).order_by("-expire_date")
+
+        active_banner_data = BannerGETSerializer(active_banner, many=True).data
+        expire_banner_data = BannerGETSerializer(expire_banner, many=True).data
+        is_random_banner = RandomBanner.objects.values_list(
+            "is_random_banner", flat=True
+        ).first()
+
+        return Response(
+            {
+                "is_random_banner": is_random_banner,
+                "Current Banner": active_banner_data,
+                "Expire Banner": expire_banner_data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        today = datetime.now().date()
+        images = request.FILES.getlist("images")
+        created_person = int(request.data.get("created_person"))
+        person = get_object_or_404(Person, id=created_person).id
+        expire_days = request.data.get("expire_days", 0)
+        is_ad_lable = True
+        if "is_ad_lable" in request.data:
+            is_ad_lable = request.data.get("is_ad_lable").lower()
+            if is_ad_lable == "true":
+                is_ad_lable = True
+            else:
+                is_ad_lable = False
+
+        if not expire_days:
+            return Response(
+                {"message": "Please enter expire_days"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            expire_days = int(expire_days)
+        except ValueError:
+            return Response(
+                {"message": "Please enter a valid number for expire_days"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(images) != 1:
+            return Response(
+                {"message": "Please upload exactly one image"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        expire_date = today + timedelta(days=expire_days)
+
+        serializer = BannerSerializer(
+            data={
+                "images": images[0],  # Use the single image
+                "redirect_url": request.data.get("redirect_url"),
+                "expire_date": expire_date,
+                "created_person": person,
+                "is_ad_lable": is_ad_lable,
+            }
+        )
+
+        try:
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def put(self, request):
+
+        banner_id = request.data.get("banner_id")
+        if not banner_id:
+            return Response(
+                {"message": "Please enter Banner Details"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        banner = get_object_or_404(Banner, id=banner_id)
+        images = request.FILES.getlist("images")
+        expire_days = request.data.get("expire_days", 0)
+        redirect_url = request.data.get("redirect_url")
+        if images:
+            if len(images) != 1:
+                return Response(
+                    {"message": "Please upload exactly one image"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            banner.images = images[0]
+
+        if redirect_url is not None:
+            banner.redirect_url = redirect_url
+
+        if expire_days:
+            try:
+                expire_days = int(expire_days)
+                banner.expire_date = datetime.now().date() + timedelta(days=expire_days)
+                banner.is_active = True
+            except ValueError:
+                return Response(
+                    {"message": "Please enter a valid number for expire_days"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        if "is_ad_lable" in request.data:
+            is_ad_lable = request.data.get("is_ad_lable").lower()
+            if is_ad_lable == "true":
+                is_ad_lable = True
+            else:
+                is_ad_lable = False
+            banner.is_ad_lable = is_ad_lable
+
+        try:
+            banner.save()
+            return Response({"message": "Your Banner Data is Successfully Updated"})
+        except Exception as error:
+            return Response({"message": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        try:
+            banner = get_object_or_404(Banner, pk=pk)
+            if banner.is_deleted == False:
+                banner.is_active = False
+                banner.is_deleted = True
+                banner.save()
+                return Response(
+                    {"message": f"Banner record ID {pk} deleted successfully."},
+                    status=status.HTTP_204_NO_CONTENT,
+                )
+            else:
+                return Response(
+                    {"message": f"Banner record ID {pk} already deleted."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        except Exception as e:
+            return Response(
+                {
+                    "message": f"Failed to delete the Banner record with ID {pk}: {str(e)}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+class V4RandomBannerView(APIView):
+    def post(self, request):
+        is_random_banner = False
+        if "is_random_banner" in request.data:
+            is_random_banner = request.data.get("is_random_banner").lower()
+            if is_random_banner == "true":
+                is_random_banner = True
+            else:
+                is_random_banner = False
+        try:
+            data = RandomBanner.objects.all().first()
+            if data:
+                data.is_random_banner = is_random_banner
+                data.save()
+                return Response(
+                    {"message": "data Successfully updated"}, status=status.HTTP_200_OK
+                )
+            else:
+                RandomBanner.objects.create(is_random_banner=is_random_banner)
+                return Response(
+                    {"message": "data Successfully created"},
+                    status=status.HTTP_201_CREATED,
+                )
+        except Exception as error:
+            return Response({"message": f"{error}"}, status=status.HTTP_400_BAD_REQUEST)
+
+def append_to_log(filename, message):
+    """Append a message to an existing log file, creating the file if it doesn't exist."""
+    with open(filename, "a") as file:
+        file.write(message + "\n")

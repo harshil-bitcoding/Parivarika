@@ -271,15 +271,15 @@ urlpatterns = [
     ),
     path("api/v4/surname", V3Views.V3SurnameDetailView.as_view(), name="surname_data"),
     path(
-        "api/v4/banner", V3Views.V3BannerDetailView.as_view(), name="banner_detail_list"
+        "api/v4/banner", V4Views.V4BannerDetailView.as_view(), name="banner_detail_list"
     ),
     path(
         "api/v4/banner/<int:pk>",
-        V3Views.V3BannerDetailView.as_view(),
+        V4Views.V4BannerDetailView.as_view(),
         name="banner_detail",
     ),
     path(
-        "api/v4/random-banner", V3Views.RandomBannerView.as_view(), name="random_banner"
+        "api/v4/random-banner", V4Views.V4RandomBannerView.as_view(), name="random_banner"
     ),
     path(
         "api/v4/first-capital",

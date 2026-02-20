@@ -1,4 +1,6 @@
 from django.contrib import admin
+
+from parivar.services import CSVImportService
 from .models import *
 from django.core.exceptions import ValidationError
 from .forms import PersonForm
@@ -6,6 +8,11 @@ from django_json_widget.widgets import JSONEditorWidget
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
+from django.utils.safestring import mark_safe
+from django.template.response import TemplateResponse
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.urls import path
 
 # class PersonAdmin(admin.ModelAdmin):
 
@@ -172,6 +179,7 @@ class TranslatePersonResource(resources.ModelResource):
 @admin.register(Person)
 class PersonAdmin(ImportExportModelAdmin):
     # resource_class = PersonResource
+    change_list_template = "admin/parivar/person/change_list.html"
     form = PersonForm
     list_display = [
         "id",
@@ -270,6 +278,40 @@ class PersonAdmin(ImportExportModelAdmin):
             return f"{village.name}, ({taluka} - {district})"
         return "-"
     get_village_full.short_description = "Village"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('import-custom-csv/', self.admin_site.admin_view(self.import_custom_csv), name='import-custom-csv'),
+        ]
+        return custom_urls + urls
+
+    def import_custom_csv(self, request):
+        if request.method == "POST":
+            csv_file = request.FILES.get("csv_file")
+            is_demo = request.POST.get("is_demo") == "on"
+            if not csv_file:
+                self.message_user(request, "Please upload a file.", level=messages.ERROR)
+                return redirect("..")
+            
+            result = CSVImportService.process_file(csv_file, request=request, is_demo=is_demo)
+            
+            if "error" in result:
+                self.message_user(request, f"Error: {result['error']}", level=messages.ERROR)
+            else:
+                msg = f"Import successful! Created {result['created']} and updated {result['updated']} entries."
+                if result.get('bug_file_url'):
+                    msg += f' <a href="{result["bug_file_url"]}" target="_blank">Download Bug CSV</a>'
+                self.message_user(request, mark_safe(msg), level=messages.SUCCESS)
+            
+            return redirect("..")
+        
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Import Custom CSV",
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(request, "admin/parivar/person/import_csv.html", context)
 
 
 @admin.register(TranslatePerson)

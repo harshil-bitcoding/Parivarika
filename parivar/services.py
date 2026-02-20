@@ -5,35 +5,57 @@ import openpyxl
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.utils import timezone
-from .models import Surname, Person, District, Taluka, Village, Country, ParentChildRelation
+from .models import Surname, Person, District, Taluka, Village, Country, ParentChildRelation, Samaj
 
 class LocationResolverService:
     @staticmethod
     def resolve_location(district_name, taluka_name, village_name):
         """
         Resolves hierarchical location (District -> Taluka -> Village).
-        Strict policy: Returns None if match not found.
+        Creates locations if they don't exist, links if they do.
+        Automatically creates/links "Patel" Samaj for the village.
         Matching is case-insensitive.
         """
-        # 1. Resolve District
+        # 1. Resolve/Create District
         district_name = str(district_name).strip()
-        district = District.objects.filter(name__iexact=district_name).first()
+        district, created = District.objects.get_or_create(
+            name__iexact=district_name,
+            defaults={'name': district_name}
+        )
         if not district:
-            return None, f"District Not Found: '{district_name}'"
+            return None, f"Failed to create District: '{district_name}'"
 
-        # 2. Resolve Taluka
+        # 2. Resolve/Create Taluka
         taluka_name = str(taluka_name).strip()
-        taluka = Taluka.objects.filter(name__iexact=taluka_name, district=district).first()
+        taluka, created = Taluka.objects.get_or_create(
+            name__iexact=taluka_name,
+            district=district,
+            defaults={'name': taluka_name, 'district': district}
+        )
         if not taluka:
-            return None, f"Taluka Not Found: '{taluka_name}' (in District: {district_name})"
+            return None, f"Failed to create Taluka: '{taluka_name}'"
 
-        # 3. Resolve Village
+        # 3. Resolve/Create Village
         village_name = str(village_name).strip()
-        village = Village.objects.filter(name__iexact=village_name, taluka=taluka).first()
+        village, created = Village.objects.get_or_create(
+            name__iexact=village_name,
+            taluka=taluka,
+            defaults={'name': village_name, 'taluka': taluka}
+        )
         if not village:
-            return None, f"Village Not Found: '{village_name}' (in Taluka: {taluka_name})"
+            return None, f"Failed to create Village: '{village_name}'"
         
-        return village, "exact"
+        # 4. Resolve/Create "Patel" Samaj for this Village
+        samaj, samaj_created = Samaj.objects.get_or_create(
+            name__iexact="Patel",
+            village=village,
+            defaults={'name': "Patel", 'village': village}
+        )
+        if not samaj:
+            return None, f"Failed to create Samaj 'Patel' for village '{village_name}'"
+        
+        status = "created" if created else "linked"
+        return village, status
 
 class CSVImportService:
     @staticmethod
@@ -136,6 +158,7 @@ class CSVImportService:
         
         # 3. Process Sheets
         global_village = None
+        global_samaj = None
         global_d_name, global_t_name, global_v_name = "", "", ""
 
         for s_idx, (sheet_name, rows) in enumerate(all_sheets_data.items()):
@@ -150,7 +173,7 @@ class CSVImportService:
                 
                 if header_row_idx != -1 and len(rows) > header_row_idx + 1:
                     data_row = rows[header_row_idx + 1]
-                    # Assuming standard layout for Dashboard: District (0), Taluka (1), Village (2), RefCode (3)
+                    # Assuming standard layout for Dashboard: District (0), Taluka (1), Village (2), Samaj (3), RefCode (Last)
                     global_d_name = cls.clean_val(data_row[0]) if len(data_row) > 0 else ""
                     global_t_name = cls.clean_val(data_row[1]) if len(data_row) > 1 else ""
                     global_v_name = cls.clean_val(data_row[2]) if len(data_row) > 2 else ""
@@ -159,8 +182,20 @@ class CSVImportService:
                     if not global_village:
                         return {"error": f"Dashboard Location Error: {loc_status} for {global_d_name}/{global_t_name}/{global_v_name}"}
                     
-                    # Update Referral Code
-                    ref_code = cls.clean_val(data_row[3]) if len(data_row) > 3 else ""
+                    # Extract Samaj from column 3
+                    samaj_name = cls.clean_val(data_row[3]) if len(data_row) > 3 else ""
+                    if samaj_name:
+                        global_samaj = Samaj.objects.filter(name__iexact=samaj_name, village=global_village).first()
+                        if not global_samaj:
+                            global_samaj, _ = Samaj.objects.get_or_create(name=samaj_name, defaults={'village': global_village})
+                    else:
+                        # Default to 'Patel' samaj if not specified
+                        global_samaj = Samaj.objects.filter(name__iexact='Patel', village=global_village).first()
+                        if not global_samaj:
+                            global_samaj, _ = Samaj.objects.get_or_create(name='Patel', defaults={'village': global_village})
+                    
+                    # Update Referral Code (always last column)
+                    ref_code = cls.clean_val(data_row[-1]) if len(data_row) > 0 else ""
                     if ref_code:
                         global_village.referral_code = ref_code
                         global_village.save()
@@ -172,28 +207,23 @@ class CSVImportService:
             # 3rd Tab & Onwards: Person Data (Surname Tabs as Master)
             if not global_village:
                 continue
-
-            # Determine target Samaj for this village (Default to 'Patel' or first available)
-            samaj_obj = global_village.samaj_list.filter(name__iexact='Patel').first()
-            if not samaj_obj:
-                samaj_obj = global_village.samaj_list.first()
-
-            if not samaj_obj:
-                 bug_rows.append([f"Sheet: {sheet_name}", "Skipped: No Samaj found for this village"])
-                 continue
+            
+            if not global_samaj:
+                bug_rows.append([f"Sheet: {sheet_name}", "Skipped: No Samaj configured for this village"])
+                continue
 
             # Master Tab Rule: Sheet name must exactly match a Surname in DB linked to this Samaj
             sheet_surname_obj = Surname.objects.filter(
                 name__iexact=sheet_name.strip(),
-                samaj=samaj_obj
+                samaj=global_samaj
             ).first()
             
             if not sheet_surname_obj:
-                # If not found, attempt to resolve/create it within this Samaj context
-                sheet_surname_obj, status_msg = cls.resolve_surname(sheet_name, samaj=samaj_obj)
+                # If not found, create new surname linked to this samaj
+                sheet_surname_obj, status_msg = cls.resolve_surname(sheet_name, samaj=global_samaj)
             
             if not sheet_surname_obj:
-                bug_rows.append([f"Sheet: {sheet_name}", "Skipped: Could not resolve or create Surname for this Samaj"])
+                bug_rows.append([f"Sheet: {sheet_name}", "Skipped: Could not resolve or create Surname for Samaj: {global_samaj.name}"])
                 continue
 
             col_map = {}
@@ -301,14 +331,20 @@ class CSVImportService:
                     # DOB Normalization
                     dob = str(dob_raw).strip() if dob_raw else ""
                     if dob:
-                        # Handle YYYY-MM-DD HH:MM:SS (common in Excel/openpyxl)
+                        # Extract time if present
+                        time_part = ""
                         if ' ' in dob:
-                            dob = dob.split(' ')[0]
+                            date_part, time_part = dob.split(' ', 1)
+                            dob = date_part
+                        
+                        # If no time was provided, use default midnight
+                        if not time_part:
+                            time_part = "00:00:00.000"
                         
                         if '-' in dob:
                             parts = dob.split('-')
                             if len(parts) == 3 and len(parts[0]) == 4: # YYYY-MM-DD
-                                dob = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                                dob = f"{parts[0]}-{parts[1]}-{parts[2]} {time_part}"
 
                     # Country Handling
                     c_name = country_name if country_name else "India"
@@ -326,9 +362,7 @@ class CSVImportService:
                         'is_out_of_country': is_out,
                         'out_of_country': country_obj,
                         'international_mobile_number': int_mob,
-                        'village': global_village,
-                        'taluka': global_village.taluka if global_village else None,
-                        'district': global_village.taluka.district if global_village and global_village.taluka else None,
+                        'samaj': global_samaj,
                         'flag_show': True,
                         'is_demo': is_demo
                     }
@@ -337,23 +371,32 @@ class CSVImportService:
                         # Clean path if starts with /media/
                         if profile_path.startswith('/media/'):
                             profile_path = profile_path.replace('/media/', '', 1)
-                        if profile_path.split('://')[0] not in ['http', 'https']:
-                            person_defaults['profile'] = profile_path
+                        # Only skip if it's an external URL (http/https)
+                        if '://' not in profile_path or profile_path.startswith(('http://', 'https://')):
+                            if not profile_path.startswith(('http://', 'https://')):
+                                person_defaults['profile'] = profile_path
 
                     if thumb_profile_path:
                         # Clean path if starts with /media/
                         if thumb_profile_path.startswith('/media/'):
                             thumb_profile_path = thumb_profile_path.replace('/media/', '', 1)
-                        if thumb_profile_path.split('://')[0] not in ['http', 'https']:
-                            person_defaults['thumb_profile'] = thumb_profile_path
+                        # Only skip if it's an external URL (http/https)
+                        if '://' not in thumb_profile_path or thumb_profile_path.startswith(('http://', 'https://')):
+                            if not thumb_profile_path.startswith(('http://', 'https://')):
+                                person_defaults['thumb_profile'] = thumb_profile_path
                     
                     if mob1:
                         # Update or create if mobile is present
+                        # Include surname in lookup to allow same mobile across different surnames/samaj
                         person, created = Person.objects.update_or_create(
-                            mobile_number1=mob1, is_demo=is_demo, is_deleted=False, defaults=person_defaults
+                            mobile_number1=mob1, 
+                            surname=surname_obj,
+                            is_demo=is_demo, 
+                            is_deleted=False, 
+                            defaults=person_defaults
                         )
                     else:
-                        # Success case: Mobile missing but name or other identifying info present
+                        # Create new if no mobile - always create fresh record
                         person_defaults['mobile_number1'] = mob1
                         person = Person.objects.create(**person_defaults)
                         created = True
@@ -375,40 +418,52 @@ class CSVImportService:
         
         if system_admin:
             # check all persons for potential father matches within the same silo
-            # We filter by village (if available) or silo to keep memory usage reasonable
             person_query = Person.objects.filter(is_demo=is_demo, is_deleted=False)
-            if global_village:
-                person_query = person_query.filter(village=global_village)
             
             all_persons = list(person_query.select_related('surname'))
             
-            # Map for fast lookup: {(first_name_lower, surname_id): person}
+            # Map for fast lookup: {(first_name_lower, surname_id, samaj_id): person}
+            # This ensures fathers are matched only within the same samaj
             person_map = {}
             for p in all_persons:
                 if p.first_name and p.surname_id:
-                    key = (p.first_name.strip().lower(), p.surname_id)
+                    key = (p.first_name.strip().lower(), p.surname_id, p.samaj_id)
                     # Simple handling for duplicates: prefer those with mobile numbers or older entries
                     if key not in person_map or (p.mobile_number1 and not person_map[key].mobile_number1):
                         person_map[key] = p
 
             relations_to_create = []
+            # Track created relations in memory to avoid duplicates in this batch
+            created_relation_pairs = set()
+            
             for child in all_persons:
                 father_name = str(child.middle_name).strip().lower() if child.middle_name else ""
-                if father_name and child.surname_id:
-                    father = person_map.get((father_name, child.surname_id))
+                if father_name and child.surname_id and child.samaj_id:
+                    # Look up father in the same samaj
+                    father = person_map.get((father_name, child.surname_id, child.samaj_id))
                     if father and father.id != child.id:
-                        # Check if relation already exists to avoid unique constraint issues
-                        # (Note: In a high-perf scenario we might use a set to track processed relations)
-                        relations_to_create.append(
-                            ParentChildRelation(
-                                parent=father,
-                                child=child,
-                                is_demo=is_demo,
-                                created_user=system_admin
-                            )
-                        )
+                        # Create unique key for this relation
+                        relation_key = (father.id, child.id)
+                        
+                        # Skip if we already created this relation in this batch
+                        if relation_key not in created_relation_pairs:
+                            # Check if relation already exists in database
+                            if not ParentChildRelation.objects.filter(
+                                parent_id=father.id, 
+                                child_id=child.id,
+                                is_demo=is_demo
+                            ).exists():
+                                relations_to_create.append(
+                                    ParentChildRelation(
+                                        parent=father,
+                                        child=child,
+                                        is_demo=is_demo,
+                                        created_user=system_admin
+                                    )
+                                )
+                                created_relation_pairs.add(relation_key)
             
-            # Use ignore_conflicts=True to avoid errors on existing relations
+            # Bulk create only non-duplicate relations
             if relations_to_create:
                 ParentChildRelation.objects.bulk_create(relations_to_create, ignore_conflicts=True)
 
