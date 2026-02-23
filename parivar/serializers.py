@@ -892,15 +892,11 @@ class CountryWiseMemberSerializer(serializers.ModelSerializer):
     def get_profile(self, obj):
         if obj.profile and obj.profile.name:
             return f"/media/{obj.profile.name}"
-        if obj.profile_pic and obj.profile_pic.name:
-            return f"/media/{obj.profile_pic.name}"
         return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_thumb_profile(self, obj):
         if obj.thumb_profile and obj.thumb_profile.name:
             return f"/media/{obj.thumb_profile.name}"
-        if obj.profile_pic and obj.profile_pic.name:
-            return f"/media/{obj.profile_pic.name}"
         return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_trans_first_name(self, obj):
