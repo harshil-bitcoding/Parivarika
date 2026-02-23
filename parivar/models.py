@@ -76,6 +76,7 @@ class Country(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
     guj_name = models.CharField(max_length=255, blank=True, null=True)
+    flag = models.ImageField(upload_to="country_flags/", blank=True, null=True)
 
     def __str__(self):
         return self.name

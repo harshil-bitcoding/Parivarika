@@ -443,6 +443,22 @@ class PersonV4Serializer(serializers.ModelSerializer):
             
         return data
 
+class CountrySummarySerializer(serializers.Serializer):
+    country_id = serializers.IntegerField()
+    country_name = serializers.CharField()
+    flag = serializers.SerializerMethodField()
+    total_members = serializers.IntegerField()
+
+    def get_flag(self, obj):
+        flag_path = obj.get('flag')
+        if flag_path:
+            # We don't have access to request build_absolute_uri easily here without context,
+            # but usually returning the path or media URL works.
+            # DRF's ImageField automatically adds MEDIA_URL if it was a ModelSerializer.
+            # Since this is a regular Serializer, we can construct the media url.
+            return f"{settings.MEDIA_URL}{flag_path}"
+        return None
+
 # new serializer added ended. 
 
 class PersonSerializer(serializers.ModelSerializer):

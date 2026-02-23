@@ -310,4 +310,15 @@ urlpatterns = [
         name="v4-upload-csv",
     ),
 
+    path(
+        "api/v4/out-of-country-summary",
+        V4Views.V4CountryWiseSummaryAPIView.as_view(),
+        name="v4-out-of-country-summary",
+    ),
+    path(
+        "api/v4/out-of-country-members/<int:country_id>",
+        V4Views.V4CountryWiseMembersAPIView.as_view(),
+        name="v4-out-of-country-members",
+    ),
+
 ]

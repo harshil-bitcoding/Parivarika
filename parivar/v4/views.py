@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, serializers
-from django.db.models import Q, Count, Case, When, F, IntegerField, Value
+from rest_framework import status
+from django.db.models import Prefetch, F, Q, Count, OuterRef, Subquery, Value, CharField, When, Case, IntegerField
+from django.db import transaction, IntegrityError
 from django.db.models.functions import Cast, Coalesce
-from django.db.models import Case, When, Value, F, CharField, Q
 from django.core import signing
 from django.urls import reverse
 
@@ -2173,7 +2173,24 @@ class PersonBySurnameViewV4(APIView):
             except Exception:
                 pass
  
-        persons = (
+        from django.db.models import Subquery, OuterRef
+        
+        trans_first_name_sq = Subquery(
+            TranslatePerson.objects.filter(
+                person_id=OuterRef("pk"),
+                language=lang,
+                is_deleted=False
+            ).values("first_name")[:1]
+        )
+        trans_middle_name_sq = Subquery(
+            TranslatePerson.objects.filter(
+                person_id=OuterRef("pk"),
+                language=lang,
+                is_deleted=False
+            ).values("middle_name")[:1]
+        )
+
+        persons_qs = (
             queryset.exclude(
                 id__in=Surname.objects.exclude(
                     top_member__in=["", None]
@@ -2182,14 +2199,17 @@ class PersonBySurnameViewV4(APIView):
                 ).values_list("top_member_as_int", flat=True)
             )
             .select_related("surname")
-            .prefetch_related("translateperson")
+            .annotate(
+                trans_fname=trans_first_name_sq,
+                trans_mname=trans_middle_name_sq
+            )
             .distinct()
             .values(
                 "id",
                 "first_name",
-                "translateperson__first_name",
+                "trans_fname",
                 "middle_name",
-                "translateperson__middle_name",
+                "trans_mname",
                 "date_of_birth",
                 "mobile_number1",
                 "mobile_number2",
@@ -2204,65 +2224,54 @@ class PersonBySurnameViewV4(APIView):
         )
  
         if is_father_selection != "true":
-            persons = persons.filter(
+            persons_qs = persons_qs.filter(
                 Q(mobile_number1__isnull=False) | Q(mobile_number2__isnull=False)
             ).exclude(mobile_number1="")
  
-        if persons.exists():
-            persons = (
-                persons.order_by("first_name", "middle_name")
-                if lang == "en"
-                else persons.order_by(
-                    "translateperson__first_name", "translateperson__middle_name"
-                )
-            )
-            # Execute the query and fetch results
- 
-            for person in persons:
+        if persons_qs.exists():
+            persons_list = list(persons_qs)
+            
+            # Sort manually to avoid grouping/re-triggering distinct inside order_by
+            if lang == "en":
+                persons_list.sort(key=lambda x: (x.get("first_name") or "", x.get("middle_name") or ""))
+            else:
+                persons_list.sort(key=lambda x: (x.get("trans_fname") or "", x.get("trans_mname") or ""))
+
+            for person in persons_list:
                 # Swap the values between first_name and middle_name
                 if lang != "en":
-                    person["surname"] = person["surname__guj_name"]
-                    (
-                        person["first_name"],
-                        person["middle_name"],
-                        person["trans_first_name"],
-                        person["trans_middle_name"],
-                    ) = (
-                        person["translateperson__first_name"],
-                        person["translateperson__middle_name"],
-                        person["first_name"],
-                        person["middle_name"],
-                    )
+                    person["surname"] = person.pop("surname__guj_name", person.get("surname"))
+                    person.pop("surname__name", None)
+                    
+                    person["trans_first_name"] = person.get("first_name")
+                    person["trans_middle_name"] = person.get("middle_name")
+                    
+                    person["first_name"] = person.pop("trans_fname", None) or person.get("first_name")
+                    person["middle_name"] = person.pop("trans_mname", None) or person.get("middle_name")
                 else:
-                    person["surname"] = person["surname__name"]
-                    person["trans_first_name"], person["trans_middle_name"] = (
-                        person["translateperson__first_name"],
-                        person["translateperson__middle_name"],
-                    )
+                    person["surname"] = person.pop("surname__name", person.get("surname"))
+                    person.pop("surname__guj_name", None)
+                    
+                    person["trans_first_name"] = person.pop("trans_fname", None)
+                    person["trans_middle_name"] = person.pop("trans_mname", None)
+
                 if (
-                    person["profile"]
-                    and person["profile"] != "null"
-                    and person["profile"] != ""
+                    person.get("profile")
+                    and str(person["profile"]) not in ("null", "")
                 ):
                     person["profile"] = f"/media/{(person['profile'])}"
                 else:
                     person["profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+                    
                 if (
-                    person["thumb_profile"]
-                    and person["thumb_profile"] != "null"
-                    and person["thumb_profile"] != ""
+                    person.get("thumb_profile")
+                    and str(person["thumb_profile"]) not in ("null", "")
                 ):
                     person["thumb_profile"] = f"/media/{(person['thumb_profile'])}"
                 else:
                     person["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH")
-                person.pop("translateperson__first_name")
-                person.pop("translateperson__middle_name")
-                person.pop("surname__name")
-                person.pop("surname__guj_name")
- 
-            results = list(persons)
- 
-            return JsonResponse({"data": results}, status=200)
+
+            return JsonResponse({"data": persons_list}, status=200)
  
         return JsonResponse({"data": []}, status=200)
         
@@ -2506,3 +2515,108 @@ def append_to_log(filename, message):
     """Append a message to an existing log file, creating the file if it doesn't exist."""
     with open(filename, "a") as file:
         file.write(message + "\n")
+
+
+class V4CountryWiseSummaryAPIView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @swagger_auto_schema(
+        operation_description="Get a summary of out-of-country members grouped by country. Restricted by user's samaj.",
+        manual_parameters=[
+            openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
+        ],
+        responses={200: openapi.Response(
+            description="Summary list of countries with member counts",
+            schema=openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'country_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'country_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'flag': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'total_members': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            )
+        )}
+    )
+    def get(self, request):
+        mobile_number = request.headers.get("X-Mobile-Number")
+        if not mobile_number:
+            return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        login_person = Person.objects.filter(
+            Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number),
+            is_deleted=False
+        ).first()
+
+        if not login_person:
+            return Response({"error": "Person not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if not login_person.samaj_id:
+            return Response({"error": "Samaj not assigned to this user"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base queryset: Out of country (not India or empty), flag_show=True, not deleted
+        base_qs = get_person_queryset(request).filter(
+            flag_show=True,
+            samaj_id=login_person.samaj_id
+        ).exclude(
+            Q(out_of_country__name__iexact='India') | Q(out_of_country__name__exact='') | Q(out_of_country__isnull=True)
+        )
+        
+        summary_qs = base_qs.values(
+            country_id=F('out_of_country__id'),
+            country_name=F('out_of_country__name'),
+            flag=F('out_of_country__flag')
+        ).annotate(
+            total_members=Count('id')
+        ).order_by('-total_members', 'country_name')
+
+        from ..serializers import CountrySummarySerializer
+        serializer = CountrySummarySerializer(summary_qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class V4CountryWiseMembersAPIView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    @swagger_auto_schema(
+        operation_description="Get members for a specific country restricted by user's samaj.",
+        manual_parameters=[
+            openapi.Parameter('lang', openapi.IN_QUERY, description="Language (en/guj)", type=openapi.TYPE_STRING),
+            openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
+        ],
+        responses={200: openapi.Response(description="List of members in the country", schema=PersonV4Serializer(many=True))}
+    )
+    def get(self, request, country_id):
+        lang = request.GET.get("lang", "en")
+        mobile_number = request.headers.get("X-Mobile-Number")
+        
+        if not mobile_number:
+            return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        login_person = Person.objects.filter(
+            Q(mobile_number1=mobile_number) | Q(mobile_number2=mobile_number),
+            is_deleted=False
+        ).first()
+
+        if not login_person:
+            return Response({"error": "Person not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if not login_person.samaj_id:
+            return Response({"error": "Samaj not assigned to this user"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base queryset: specific country, show true, not deleted, same samaj
+        members = get_person_queryset(request).filter(
+            flag_show=True,
+            out_of_country_id=country_id,
+            samaj_id=login_person.samaj_id
+        ).select_related(
+            "surname", "samaj", "samaj__village", "samaj__village__taluka", "samaj__village__taluka__district", "city", "state", "out_of_country"
+        ).order_by("first_name")
+
+        serializer = PersonV4Serializer(members, many=True, context={"lang": lang})
+        return Response(serializer.data, status=status.HTTP_200_OK)
