@@ -850,7 +850,6 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             "out_of_mobile",
             "trans_first_name",
             "trans_middle_name",
-            "trans_middle_name",
         ]
 
     def get_profile(self, obj):
@@ -858,6 +857,81 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             return obj.profile.url
         else:
             return os.getenv("DEFAULT_PROFILE_PATH")
+
+class CountryWiseMemberSerializer(serializers.ModelSerializer):
+    surname = serializers.SerializerMethodField(read_only=True, required=False)
+    profile = serializers.SerializerMethodField(read_only=True, required=False)
+    thumb_profile = serializers.SerializerMethodField(read_only=True, required=False)
+    trans_first_name = serializers.SerializerMethodField(read_only=True, required=False)
+    trans_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+
+    class Meta:
+        model = Person
+        fields = [
+            "id",
+            "first_name",
+            "middle_name",
+            "date_of_birth",
+            "mobile_number1",
+            "mobile_number2",
+            "flag_show",
+            "profile",
+            "is_admin",
+            "surname",
+            "thumb_profile",
+            "trans_first_name",
+            "trans_middle_name",
+        ]
+
+    def get_surname(self, obj):
+        lang = self.context.get("lang", "en")
+        if not obj.surname:
+            return None
+        return obj.surname.guj_name if lang == "guj" and obj.surname.guj_name else obj.surname.name
+
+    def get_profile(self, obj):
+        if obj.profile and obj.profile.name:
+            return f"/media/{obj.profile.name}"
+        if obj.profile_pic and obj.profile_pic.name:
+            return f"/media/{obj.profile_pic.name}"
+        return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_thumb_profile(self, obj):
+        if obj.thumb_profile and obj.thumb_profile.name:
+            return f"/media/{obj.thumb_profile.name}"
+        if obj.profile_pic and obj.profile_pic.name:
+            return f"/media/{obj.profile_pic.name}"
+        return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_trans_first_name(self, obj):
+        if hasattr(obj, 'trans_fname'):
+            return obj.trans_fname
+            
+        lang = self.context.get("lang", "en")
+        if lang == "en":
+            return None
+            
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        if translate_data and translate_data.first_name:
+            return translate_data.first_name
+        return obj.guj_first_name if hasattr(obj, 'guj_first_name') and obj.guj_first_name else None
+
+    def get_trans_middle_name(self, obj):
+        if hasattr(obj, 'trans_mname'):
+            return obj.trans_mname
+            
+        lang = self.context.get("lang", "en")
+        if lang == "en":
+            return None
+            
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        if translate_data and translate_data.middle_name:
+            return translate_data.middle_name
+        return obj.guj_middle_name if hasattr(obj, 'guj_middle_name') and obj.guj_middle_name else None
 
     def get_thumb_profile(self, obj):
         if obj.thumb_profile and obj.thumb_profile != "":

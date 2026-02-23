@@ -29,6 +29,7 @@ from django.conf import settings
 from notifications.models import PersonPlayerId
 from ..utils import get_person_queryset, get_relation_queryset
 from ..serializers import (
+    CountryWiseMemberSerializer,
     DistrictSerializer,
     PersonGetSerializer4,
     StateSerializer, 
@@ -2589,7 +2590,7 @@ class V4CountryWiseMembersAPIView(APIView):
             openapi.Parameter('lang', openapi.IN_QUERY, description="Language (en/guj)", type=openapi.TYPE_STRING),
             openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
         ],
-        responses={200: openapi.Response(description="List of members in the country", schema=PersonV4Serializer(many=True))}
+        responses={200: openapi.Response(description="List of members in the country", schema=CountryWiseMemberSerializer(many=True))}
     )
     def get(self, request, country_id):
         lang = request.GET.get("lang", "en")
@@ -2618,5 +2619,6 @@ class V4CountryWiseMembersAPIView(APIView):
             "surname", "samaj", "samaj__village", "samaj__village__taluka", "samaj__village__taluka__district", "city", "state", "out_of_country"
         ).order_by("first_name")
 
-        serializer = PersonV4Serializer(members, many=True, context={"lang": lang})
+        from ..serializers import CountryWiseMemberSerializer
+        serializer = CountryWiseMemberSerializer(members, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
