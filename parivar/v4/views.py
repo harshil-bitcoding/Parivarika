@@ -1765,7 +1765,7 @@ class V4AdminPersonDetailView(APIView):
         except Person.DoesNotExist:
             # logger.error(f'Person with ID {admin_user_id} not found')
             return Response({'message': 'Admin Person with that ID does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        if not admin_person.is_admin:
+        if not admin_person.is_admin and not admin_person.is_super_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
         surname = request.data.get('surname', 0)
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
