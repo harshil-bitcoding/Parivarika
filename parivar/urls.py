@@ -59,7 +59,7 @@ urlpatterns = [
     path(
         "api/v4/admin-person/<int:pk>/<int:admin_user_id>",
         V4Views.V4AdminPersonDetailView.as_view(),
-        name="admin-person-list",
+        name="admin-person-detail",
     ),
 
     path("api/v4/admin-access", V4Views.V4AdminAccess.as_view(), name="country_detail"),
