@@ -31,6 +31,7 @@ from ..utils import get_person_queryset, get_relation_queryset
 from ..serializers import (
     CountryWiseMemberSerializer,
     DistrictSerializer,
+    PersonGetSerializer,
     PersonGetSerializer4,
     StateSerializer, 
     TalukaSerializer, 
@@ -63,7 +64,7 @@ from ..serializers import (
     # DemoParentChildRelationSerializer,
     DemoTranslatePersonSerializer,
 )
-from ..views import getadmincontact
+from ..views import compress_image, getadmincontact
 import logging
 import os
 from drf_yasg.utils import swagger_auto_schema
@@ -2517,6 +2518,359 @@ def append_to_log(filename, message):
     with open(filename, "a") as file:
         file.write(message + "\n")
 
+class V4ProfileDetailView(APIView):
+
+    def post(self, request):
+        person_id = request.data.get("id", None)
+
+        try:
+            size = (300, 300)
+            quality = 60
+            if person_id:
+                person = get_object_or_404(Person, pk=person_id)
+                if person.profile != "":
+                    person.profile.delete()
+                    person.thumb_profile.delete()
+                serializer = ProfileSerializer(person, data=request.data)
+            else:
+                serializer = ProfileSerializer(data=request.data)
+
+            serializer.is_valid(raise_exception=True)
+            serializer_data = serializer.save()
+
+            if "profile" in request.FILES:
+                thumb_img = compress_image(
+                    serializer_data.profile,
+                    serializer_data.thumb_profile,
+                    size,
+                    quality,
+                )
+
+            if person_id:
+                return Response(
+                    {"success": "Profile data updated successfully!"},
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {"success": "Profile data saved successfully!"},
+                    status=status.HTTP_201_CREATED,
+                )
+
+        except Person.DoesNotExist:
+            return Response(
+                {"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Error saving profile: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def delete(self, request):
+        person_id = request.data.get("id", None)
+
+        try:
+            size = (300, 300)
+            quality = 60
+            if person_id:
+                person = get_object_or_404(Person, pk=person_id)
+                if person.profile != "":
+                    person.profile.delete()
+                    person.thumb_profile.delete()
+
+            if person_id:
+                return Response(
+                    {"success": "Profile data remove successfully!"},
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {"success": "Person record not found!"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        except Person.DoesNotExist:
+            return Response(
+                {"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Error removing profile: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+class V4PersonDetailView(APIView):
+    authentication_classes = []
+    def get(self, request, pk):
+        try:
+            person = Person.objects.get(id=pk)
+            if person:
+                lang = request.GET.get('lang', 'en')
+                person = PersonGetSerializer(person, context={'lang': lang}).data
+                person['child'] = []
+                person['parent'] = {}
+                person['brother'] = []
+                child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
+                if child_data.exists():
+                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
+                    for child in child_data:
+                        person['child'].append(child.get("child"))
+                parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
+                if parent_data:
+                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
+                    person['parent'] = parent_data.get("parent")
+                    brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
+                    if brother_data.exists():
+                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
+                        for brother in brother_data:
+                            if int(person["id"]) != int(brother["child"]["id"]) :
+                                person['brother'].append(brother.get("child"))
+                return Response(person, status=status.HTTP_200_OK)
+        except Person.DoesNotExist:
+            return Response({'error': 'Person not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+    def post(self, request):
+        surname = request.data.get('surname', 0)
+        persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
+        father = request.data.get('father', 0)        
+        top_member = 0
+        if persons_surname_wise: 
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+            if father == 0 :
+                father = top_member
+        children = request.data.get('child', [])
+        first_name = request.data.get('first_name')
+        middle_name = request.data.get('middle_name')
+        address = request.data.get('address')
+        out_of_address = request.data.get('out_of_address')
+        lang = request.data.get('lang', 'en')
+        date_of_birth = request.data.get('date_of_birth')
+        blood_group = request.data.get('blood_group', 1)
+        city = request.data.get('city')
+        state = request.data.get('state')
+        out_of_country = request.data.get('out_of_country', 1)
+        if (int(out_of_country) == 0) :
+            out_of_country = 1
+        flag_show = request.data.get('flag_show')
+        mobile_number1 = request.data.get('mobile_number1')
+        mobile_number2 = request.data.get('mobile_number2')
+        status_name = request.data.get('status')
+        is_admin = request.data.get('is_admin')
+        is_registered_directly = request.data.get('is_registered_directly')
+        person_data = {
+            'first_name': first_name,
+            'middle_name': middle_name,
+            'address': address,
+            'out_of_address': out_of_address,
+            'date_of_birth': date_of_birth,
+            'blood_group': blood_group,
+            'city': city,
+            'state': state,
+            'out_of_country': out_of_country,
+            'flag_show': flag_show,
+            'mobile_number1': mobile_number1,
+            'mobile_number2': mobile_number2,
+            'status': status_name,
+            'surname': surname,
+            'is_admin': is_admin,
+            'is_registered_directly': is_registered_directly
+        }
+        serializer = PersonSerializer(data=person_data)
+        if serializer.is_valid():
+            if len(children) > 0 :
+                children_exist = ParentChildRelation.objects.filter(child__in=children)
+                if children_exist.exclude(parent=top_member).exists():
+                    return JsonResponse({'message': 'Children already exist'}, status=400)
+                children_exist.filter(parent=top_member).delete()
+            persons = serializer.save()
+            try:
+                if not first_name:
+                    raise ValueError("first_name is required")
+                user, user_created = User.objects.get_or_create(username=first_name)
+                if user_created:
+                    user.set_password(''.join(choices(string.ascii_letters + string.digits, k=12)))
+                user.save()
+                if user_created:
+                    print(f"New user created: {user.username}")
+                else:
+                    print(f"User updated (username): {user.username}")
+            except IntegrityError as e:
+                # Handle potential duplicate username or other database integrity errors
+                print(f"IntegrityError encountered: {e}")
+            parent_serializer = ParentChildRelationSerializer(data={
+                                'parent': father, 
+                                'child': persons.id,
+                                'created_user': persons.id
+                            })
+            if parent_serializer.is_valid():
+                parent_serializer.save()
+            for child in children :
+                child_serializer = ParentChildRelationSerializer(data={
+                                'child': child, 
+                                'parent': persons.id,
+                                'created_user': persons.id
+                            })
+                if child_serializer.is_valid():
+                    child_serializer.save()
+            if (lang != "en") :   
+                person_translate_data = {
+                    'first_name': first_name, 
+                    'person_id': persons.id,
+                    'middle_name': middle_name,
+                    'address': address,
+                    'out_of_address':out_of_address,
+
+                    'language': lang
+                }
+                person_translate_serializer = TranslatePersonSerializer(data=person_translate_data)
+                if person_translate_serializer.is_valid():
+                    person_translate_serializer.save()
+            return Response(PersonGetSerializer(persons, context={'lang': lang}).data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request, pk):
+        person = get_object_or_404(Person, pk=pk)
+        if not person:
+            return JsonResponse({'message': 'Person not found'}, status=status.HTTP_400_BAD_REQUEST)
+        surname = request.data.get('surname', 0)
+        persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
+        father = request.data.get('father', 0) 
+        top_member = 0
+        if persons_surname_wise: 
+            top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0))
+            if father == 0:
+                father = top_member
+        children = request.data.get('child', [])
+        first_name = request.data.get('first_name')
+        middle_name = request.data.get('middle_name')
+        address = request.data.get('address')
+        out_of_address = request.data.get('out_of_address')
+        lang = request.data.get('lang', 'en')
+        date_of_birth = request.data.get('date_of_birth')
+        blood_group = request.data.get('blood_group', 1)
+        city = request.data.get('city')
+        state = request.data.get('state')
+        out_of_country = request.data.get('out_of_country', 1)
+        if (int(out_of_country) == 0) :
+            out_of_country = 1
+        flag_show = request.data.get('flag_show')
+        mobile_number1 = request.data.get('mobile_number1')
+        mobile_number2 = request.data.get('mobile_number2')
+        status_name = request.data.get('status')
+        is_admin = request.data.get('is_admin')
+        is_registered_directly = request.data.get('is_registered_directly')
+        person_data = {
+            'first_name' : person.first_name if lang == 'en' else first_name,
+            'middle_name' : person.middle_name if lang == 'en' else middle_name,
+            'address' : person.address if lang == 'en' else address,
+            'out_of_address': out_of_address,
+            'date_of_birth': date_of_birth,
+            'blood_group': blood_group,
+            'city': city,
+            'state': state,
+            'out_of_country': out_of_country,
+            'flag_show': flag_show,
+            'mobile_number1': mobile_number1,
+            'mobile_number2': mobile_number2,
+            'status': status_name,
+            'surname': surname,
+            'is_admin': is_admin,
+            'is_registered_directly': is_registered_directly
+        }
+
+        ignore_fields = ['update_field_message', 'id', 'flag_show', 'is_admin', 'is_registered_directly']
+        update_field_message = []
+        for field, new_value in person_data.items():
+            if field in ignore_fields:
+                continue
+            old_value = getattr(person, field, None)
+
+            if hasattr(old_value, 'id'):
+                old_value = old_value.id
+
+            if old_value != new_value:
+                update_field_message.append({
+                    'field': field,
+                    'previous': old_value,
+                    'new': new_value
+                })
+
+        if update_field_message:
+            person.update_field_message = str(update_field_message)
+            
+        serializer = PersonSerializer(person, data=person_data, context={'person_id': person.id})
+        if serializer.is_valid():
+            if len(children) > 0:
+                children_exist = ParentChildRelation.objects.filter(child__in=children)
+                if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
+                    return JsonResponse({'message': 'Children already exist'}, status=400)
+            persons = serializer.save()
+
+            father_data = ParentChildRelation.objects.filter(child=persons.id)
+            data = { 
+                    'parent': father, 
+                    'child': persons.id,
+                    'created_user': persons.id
+                }
+            father_data_serializer = None
+            if father_data.exists() :
+                father_data = father_data.first()
+                father_data_serializer = ParentChildRelationSerializer(father_data, data=data)
+            else :
+                father_data_serializer = ParentChildRelationSerializer(data=data)
+            if father_data_serializer.is_valid():
+                father_data_serializer.save()
+            for child in children:
+                child_data = ParentChildRelation.objects.filter(child=child)
+                data = { 
+                    'child': child, 
+                    'parent': persons.id,
+                    'created_user': persons.id
+                }
+                child_data_serializer = None
+                if child_data.exists() :
+                    child_data = child_data.first()
+                    child_data_serializer = ParentChildRelationSerializer(child_data, data=data)
+                else :
+                    child_data_serializer = ParentChildRelationSerializer(data=data)
+                if child_data_serializer.is_valid():
+                    child_data_serializer.save()
+            if len(children) > 0:       
+                remove_child_person = ParentChildRelation.objects.filter(parent=persons.id).exclude(child__in=children)
+                if remove_child_person.exists():
+                    for child in remove_child_person:
+                        child.parent_id = int(top_member)
+                        child.save()
+            if (lang != "en"):
+                lang_data = TranslatePerson.objects.filter(person_id=persons.id).filter(language=lang)
+                if lang_data.exists() :
+                    lang_data = lang_data.first()
+                    person_translate_data = {
+                        'first_name': first_name,
+                        'middle_name': middle_name,
+                        'address': address,
+                        'out_of_address':out_of_address,
+                        'language': lang
+                    }
+                    person_translate_serializer = TranslatePersonSerializer(lang_data, data=person_translate_data)
+                    if person_translate_serializer.is_valid():
+                        person_translate_serializer.save()
+            return Response({
+                "person": PersonGetSerializer(persons, context={'lang': lang}).data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        person = get_object_or_404(Person, pk=pk)
+        try:
+            person.delete()
+            return Response({"message": "Person record deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({"message": f"Failed to delete the person record: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class V4CountryWiseSummaryAPIView(APIView):
     authentication_classes = []
@@ -2621,4 +2975,356 @@ class V4CountryWiseMembersAPIView(APIView):
 
         from ..serializers import CountryWiseMemberSerializer
         serializer = CountryWiseMemberSerializer(members, many=True, context={"lang": lang})
+        return Response({"data": serializer.data}, status=status.HTTP_200_OK)
+
+class CityDetailView(APIView):
+    authentication_classes = []
+    def get(self, request, state_id):
+        try:
+            state = State.objects.prefetch_related('state').get(id=state_id)
+        except State.DoesNotExist:
+            return Response({'error': 'State not found'}, status=status.HTTP_404_NOT_FOUND)
+        state = state.state.all()
+        lang = request.GET.get('lang', 'en')
+        serializer = CitySerializer(state, many=True, context={'lang': lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class StateDetailView(APIView):
+    authentication_classes = []
+    def get(self, request):
+        state = State.objects.all()
+        lang = request.GET.get('lang', 'en')
+        serializer = StateSerializer(state, many=True, context={'lang': lang})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class CountryDetailView(APIView):
+    authentication_classes = []
+    def get(self, request):
+        country = Country.objects.all()
+        lang = request.GET.get('lang', 'en')
+        serializer = CountrySerializer(country, many=True, context={'lang': lang})
+        data = sorted(serializer.data, key=lambda x: (x["name"]))
+        return Response(data,  status=status.HTTP_200_OK)
+    
+class PersonMiddleNameUpdate(APIView):
+    def put(self, request):
+        top_member_ids = Surname.objects.values("top_member").values_list(
+            "top_member", flat=True
+        )
+        top_member_ids = [int(id) for id in top_member_ids]
+        allChild = ParentChildRelation.objects.exclude(
+            parent__id__in=top_member_ids, is_deleted=False
+        ).order_by("id")
+        if allChild and allChild.exists():
+            for child in allChild:
+                child.child.middle_name = child.parent.first_name
+                child.child.save()
+
+                traslate_child = TranslatePerson.objects.filter(
+                    person_id=child.child, is_deleted=False
+                ).first()
+                traslate_parent = TranslatePerson.objects.filter(
+                    person_id=child.parent, is_deleted=False
+                ).first()
+                if traslate_child and traslate_parent:
+                    traslate_child.middle_name = traslate_parent.first_name
+                    traslate_child.save()
+
+        return JsonResponse({"data": "Okay"}, status=200)
+    
+class AdditionalData(APIView):
+    def get(self, request):
+        additional_data_entry = AdsSetting.objects.values("ads_setting").first()
+        additional_data = (
+            additional_data_entry["ads_setting"] if additional_data_entry else {}
+        )
+        return Response({"additional_data": additional_data}, status=status.HTTP_200_OK)
+    
+class V4SurnameDetailView(APIView):
+    authentication_classes = []
+
+    def get(self, request):
+        person_id = request.GET.get("person_id")
+        lang = request.GET.get("lang", "en")
+        try:
+            person = Person.objects.get(id=person_id, is_deleted=False)
+        except:
+            return Response(
+                {"message": "Person Not Found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        surnames = Surname.objects.all().order_by("fix_order")
+        serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
+        surname_data = serializer.data
+        for index, instance in enumerate(surname_data):
+            if instance["id"] == person.surname.id:
+                instance["sort_no"] = 0
+            else:
+                instance["sort_no"] = 2
+        surname_data = sorted(surname_data, key=lambda x: (x["sort_no"]))
+        return Response(surname_data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        surname_serializer = SurnameSerializer(data=request.data)
+        if surname_serializer.is_valid():
+            surname_instance = surname_serializer.save()
+            person_data = {
+                "first_name": surname_instance.name,
+                "middle_name": surname_instance.name,
+                "address": "",
+                "blood_group": 1,
+                "date_of_birth": "1947-08-15 00:00:00.000",
+                "out_of_country": 1,
+                "out_of_address": "",
+                "city": 1,
+                "state": 1,
+                "mobile_number1": "",
+                "mobile_number2": "",
+                "surname": surname_instance.id,
+                "flag_show": True,
+                "is_admin": False,
+                "is_registered_directly": True,
+            }
+            person_serializer = PersonSerializer(data=person_data)
+            if person_serializer.is_valid():
+                person_instance = person_serializer.save()
+                surname_instance.top_member = person_instance.id
+                surname_instance.save()
+                lang = request.data.get("lang", "en")
+                if lang != "en":
+                    guj_name = request.data.get(
+                        "guj_name", request.data.get("name", "")
+                    )
+                    if guj_name:
+                        person_translate_data = {
+                            "first_name": guj_name,
+                            "person_id": person_instance.id,
+                            "middle_name": guj_name,
+                            "address": "",
+                            "out_of_address": "",
+                            "language": lang,
+                        }
+                        person_translate_serializer = TranslatePersonSerializer(
+                            data=person_translate_data
+                        )
+                        if person_translate_serializer.is_valid():
+                            person_translate_instance = (
+                                person_translate_serializer.save()
+                            )
+                            return Response(
+                                {"surname": surname_serializer.data},
+                                status=status.HTTP_201_CREATED,
+                            )
+                        else:
+                            surname_instance.delete()
+                            person_instance.delete()
+                            return Response(
+                                person_translate_serializer.errors,
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                return Response(
+                    {"surname": surname_serializer.data}, status=status.HTTP_201_CREATED
+                )
+            else:
+                surname_instance.delete()
+                return Response(
+                    person_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(surname_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+def capitalize_name(name):
+    return name.capitalize()
+class FirstCapitalize(APIView):
+    def get(self, request):
+        person = Person.objects.all()
+        for i in person:
+            i.first_name = capitalize_name(i.first_name)
+            i.middle_name = capitalize_name(i.middle_name)
+            i.save()
+        return Response({"okay"})
+    
+class BloodGroupDetailView(APIView):
+    authentication_classes = []
+    def get(self, request):
+        bloodgroup = BloodGroup.objects.all()
+        serializer = BloodGroupSerializer(bloodgroup, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class ChildPerson(APIView):
+    def get(self, request):
+        try:
+            person_id = request.GET.get("parent_id")
+            lang = request.GET.get("lang", "en")
+            child_ids = ParentChildRelation.objects.filter(
+                parent=int(person_id)
+            ).values_list("child", flat=True)
+            children = Person.objects.filter(id__in=child_ids, is_deleted=False)
+            child_data = PersonGetSerializer(
+                children, many=True, context={"lang": lang}
+            )
+            return Response({"child_data": child_data.data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"child_data": [], "Error": e},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def post(self, request):
+        try:
+            print("Chiled -person -post --", request.data)
+            parent_id = request.data.get("parent_id")
+            lang = request.data.get("lang", "en")
+            name = request.data.get("child_name")
+            dob = request.data.get("dob")
+            mobile_number = request.data.get("mobile_number") or ""
+            platform = request.data.get("platform")
+            person_data = Person.objects.get(id=parent_id, is_deleted=False)
+            person_create = Person.objects.create(
+                first_name=name,
+                middle_name=person_data.first_name,
+                surname=person_data.surname,
+                date_of_birth=dob,
+                address=person_data.address,
+                mobile_number1=mobile_number,
+                mobile_number2="",
+                out_of_address=person_data.out_of_address,
+                city=person_data.city,
+                state=person_data.state,
+                child_flag=True,
+                platform=platform,
+                update_field_message='newly created as child'
+            )
+            person_child = ParentChildRelation.objects.create(
+                parent=person_data, child=person_create, created_user=person_data
+            )
+            try:
+                translate_data = TranslatePerson.objects.get(
+                    person_id=parent_id, is_deleted=False
+                )
+                if translate_data is not None:
+                    translate_data = TranslatePerson.objects.create(
+                        person_id=person_create,
+                        first_name=name,
+                        middle_name=translate_data.first_name,
+                        address=translate_data.address,
+                        out_of_address=translate_data.out_of_address,
+                        language="guj",
+                    )
+            except Exception as e:
+                pass
+            if lang == "guj":
+                message = "તમારું બાળક સફળતાપૂર્વક અમારા સભ્યોમાં નોંધાયેલ છે. હવે તમે તમારા એડમિનનો સંપર્ક કરી શકો છો."
+            else:
+                message = "Your child is successfully registered in our members. Now you can contact your admin."
+            return Response(
+                {"message": message, "child_id": person_create.id},
+                status=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return Response(
+                {"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def put(self, request):
+        try:
+            print("Chiled -person -put --", request.data)
+            child_id = request.data.get("child_id")
+            child_name = request.data.get("child_name")
+            dob = request.data.get("dob")
+            mobile_number = request.data.get("mobile_number")
+            lang = request.data.get("lang", "en")
+            person_data = Person.objects.get(id=child_id)
+            if person_data:
+                ignore_fields = ['first_name', 'date_of_birth', 'mobile_number1']
+                update_field_message = []
+                for field, new_value in request.data.items():
+                    if field == 'child_name':
+                        field = 'first_name'
+                    elif field == 'dob':
+                        field = 'date_of_birth'
+                    elif field == 'mobile_number':
+                        field = 'mobile_number1'
+                    if field in ignore_fields:
+                        old_value = getattr(person_data, field, None)
+                        print("Old Value", old_value, "New Value", new_value, field)
+                        if hasattr(old_value, 'id'):
+                            old_value = old_value.id
+
+                        if old_value != new_value:
+                            update_field_message.append({
+                                'field': field,
+                                'previous': old_value,
+                                'new': new_value
+                            })
+
+                if update_field_message:
+                    person_data.update_field_message = str(update_field_message)
+            
+                existing_profile = person_data.profile
+                person_data.first_name = child_name
+                person_data.date_of_birth = dob
+                person_data.mobile_number1 = mobile_number
+                person_data.flag_show = False
+                person_data.save()
+
+                if "profile" in request.data:
+                    new_profile = request.data["profile"]
+                    person_data.profile = new_profile
+                    person_data.save()
+
+                if existing_profile and existing_profile != person_data.profile:
+                    existing_profile.delete()
+
+            return Response(
+                {"child_id": child_id, "message": "succesfully updated"},
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"message": e}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def delete(self, request):
+        try:
+            lang = request.data.get("lang", "en")
+            child_id = request.data.get("child_id")
+            person = Person.objects.get(id=child_id)
+            topmember = Surname.objects.get(id=person.surname.id)
+            topmaember_id = topmember.top_member
+
+            # Fetch the top member Person instance
+            top_member_person = Person.objects.get(id=topmaember_id)
+
+            parent_relation_data = ParentChildRelation.objects.filter(
+                parent=person, is_deleted=False
+            )
+            if parent_relation_data:
+                for data in parent_relation_data:
+                    data.parent = top_member_person
+                    data.save()
+
+            relation_data = ParentChildRelation.objects.get(
+                child=person, is_deleted=False
+            )
+            if relation_data:
+                relation_data.is_deleted = True
+                relation_data.save()
+
+            person.flag_show = False
+            person.is_deleted = True
+            person.save()
+
+            messages = {
+                "deleted_data": {
+                    "en": "Your child is successfully deleted in members",
+                    "guj": "તમારા બાળકને સભ્યોમાંથી સફળતાપૂર્વક કાઢી નાખવામાં આવ્યું છે",
+                },
+            }
+            return Response(
+                {"message": messages["deleted_data"][lang]}, status=status.HTTP_200_OK
+            )
+        except Exception as error:
+            return Response(
+                {"message": "Already Student Deleted"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
