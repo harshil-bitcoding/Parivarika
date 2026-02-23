@@ -845,9 +845,11 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             "is_registered_directly",
             "guj_first_name",
             "guj_middle_name",
+            "guj_address",
             "guj_out_of_address",
             "out_of_mobile",
             "trans_first_name",
+            "trans_middle_name",
             "trans_middle_name",
         ]
 
@@ -1577,20 +1579,24 @@ class GetTreeRelationSerializer(serializers.ModelSerializer):
     trans_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
 
     def get_trans_first_name(self, obj):
+        if not obj.child:
+            return None
         translate_data = TranslatePerson.objects.filter(
-            person_id=obj.id, language="guj", is_deleted=False
+            person_id=obj.child.id, language="guj", is_deleted=False
         ).first()
         if translate_data and translate_data.first_name:
             return translate_data.first_name
-        return obj.guj_first_name if hasattr(obj, 'guj_first_name') and obj.guj_first_name else obj.first_name
+        return obj.child.guj_first_name if hasattr(obj.child, 'guj_first_name') and obj.child.guj_first_name else obj.child.first_name
 
     def get_trans_middle_name(self, obj):
+        if not obj.child:
+            return None
         translate_data = TranslatePerson.objects.filter(
-            person_id=obj.id, language="guj", is_deleted=False
+            person_id=obj.child.id, language="guj", is_deleted=False
         ).first()
         if translate_data and translate_data.middle_name:
             return translate_data.middle_name
-        return obj.guj_middle_name if hasattr(obj, 'guj_middle_name') and obj.guj_middle_name else obj.middle_name
+        return obj.child.guj_middle_name if hasattr(obj.child, 'guj_middle_name') and obj.child.guj_middle_name else obj.child.middle_name
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
