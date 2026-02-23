@@ -1727,8 +1727,8 @@ class V4AdminPersonDetailView(APIView):
         except Person.DoesNotExist:
             # logger.error(f'Person with ID {admin_user_id} not found')
             return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        if not admin_person.is_admin and not admin_person.is_super_admin:
-            return Response({'message': 'User does not have admin access'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
+            return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
         try:
             person = Person.objects.get(id=pk)
             if person:
