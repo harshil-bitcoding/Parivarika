@@ -1,3 +1,4 @@
+from io import BytesIO
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6,7 +7,8 @@ from django.db import transaction, IntegrityError
 from django.db.models.functions import Cast, Coalesce
 from django.core import signing
 from django.urls import reverse
-
+from PIL import Image, ImageFile
+from django.core.files import File
 from django.http import HttpResponse, JsonResponse, Http404
 from django.shortcuts import get_object_or_404, render
 from django.db.models.functions import Concat
@@ -19,7 +21,7 @@ import random
 
 from parivar.services import CSVImportService
 from ..models import (
-    Person, District, Taluka, User, Village, Samaj, State, 
+    Person, District, Taluka, User, Village, Samaj, State, City,
     TranslatePerson, Surname, ParentChildRelation, Country,
     BloodGroup, Banner, AdsSetting, PersonUpdateLog, RandomBanner,
     # DemoPerson, DemoParentChildRelation, DemoSurname
@@ -64,7 +66,7 @@ from ..serializers import (
     # DemoParentChildRelationSerializer,
     DemoTranslatePersonSerializer,
 )
-from ..views import compress_image, getadmincontact
+# from ..views import compress_image, getadmincontact
 import logging
 import os
 from drf_yasg.utils import swagger_auto_schema
@@ -73,6 +75,155 @@ from random import choices
 import logging
 
 logger = logging.getLogger(__name__)
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+
+prototxt_path = os.getenv("PROTO_TXT_PATH")
+model_path = os.getenv("MODEL_PATH")
+net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+
+
+def find_faces_and_crop(image, aspect_ratio=(1, 1), padding_ratio=50):
+    # Convert PIL Image to an OpenCV Image
+    cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+    # Get the image dimensions
+    (h, w) = cv_image.shape[:2]
+
+    # Preprocess the image: mean subtraction, scaling, and swapping Red and Blue channels
+    blob = cv2.dnn.blobFromImage(cv_image, 1.0, (300, 300), (104.0, 177.0, 123.0))
+
+    # Pass the blob through the network to detect faces
+    net.setInput(blob)
+    detections = net.forward()
+
+    cropped_images = []
+
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+
+            # Calculate the center of the face
+            centerX, centerY = (startX + endX) // 2, (startY + endY) // 2
+
+            # Calculate the width and height based on the desired aspect ratio
+            face_width = endX - startX
+            face_height = face_width * aspect_ratio[1] // aspect_ratio[0]
+
+            # Add padding to include neck and hair
+            padding = int(padding_ratio)
+            crop_top = max(centerY - face_height - padding // 2, 0)
+            crop_bottom = min(centerY + face_height + padding // 2, h)
+
+            # Ensure the dimensions do not exceed the image boundaries
+            crop_left = max(centerX - face_width - padding // 2, 0)
+            crop_right = min(centerX + face_width + padding // 2, w)
+
+            # Crop the image to the calculated dimensions
+            img_cropped = image.crop((crop_left, crop_top, crop_right, crop_bottom))
+            cropped_images.append(img_cropped)
+
+    return cropped_images
+
+
+def get_dominant_color(image, num_colors=1):
+    """Returns the dominant color(s) in the image."""
+    image = image.convert("RGB")
+    pixels = np.array(image).reshape(-1, 3)
+    colors, count = np.unique(pixels, axis=0, return_counts=True)
+    sorted_indices = np.argsort(count)[::-1]
+    dominant_colors = colors[sorted_indices][:num_colors]
+    return tuple(dominant_colors[0])
+
+
+def compress_image(input_path, output_folder, size=(300, 300), quality=40):
+    img = Image.open(input_path)
+    cropped_images = find_faces_and_crop(img)  # Crop image to center each face if found
+    for idx, img_cropped in enumerate(cropped_images):
+        img_cropped.thumbnail(size, Image.Resampling.LANCZOS)
+
+        dominant_color = get_dominant_color(img_cropped)
+
+        new_img = Image.new("RGB", size, dominant_color)
+
+        paste_x = (size[0] - img_cropped.width) // 2
+        paste_y = (size[1] - img_cropped.height) // 2
+
+        new_img.paste(img_cropped, (paste_x, paste_y))
+        fileName = f"{os.path.splitext(os.path.basename(input_path.path))[0]}.jpg"
+        try:
+            output_path = os.path.join(output_folder.path, fileName)
+        except Exception as e:
+            output_path = os.path.join("compress_img", fileName)
+            pass
+        # new_img.save(output_path, optimize=True, quality=quality)  # Save with compression
+        buffer = BytesIO()
+        new_img.save(buffer, format="JPEG")
+        django_file = File(buffer, name=fileName)
+        output_folder.save(fileName, django_file, save=True)
+        return output_path
+
+def getadmincontact(flag_show=False, lang="en", surname=None):
+    if flag_show == False:
+        admin = None
+        if surname is not None:
+            if lang == "guj":
+                admin = Person.objects.filter(
+                    surname__guj_name=surname,
+                    flag_show=True,
+                    is_admin=True,
+                    is_deleted=False,
+                )
+            else:
+                admin = Person.objects.filter(
+                    surname__name=surname,
+                    flag_show=True,
+                    is_admin=True,
+                    is_deleted=False,
+                )
+        if admin.exists():
+            admin_serializer = PersonGetSerializer(
+                admin, context={"lang": lang}, many=True
+            )
+            admin_data = admin_serializer.data
+        else:
+            admin_data = []
+
+        super_admin = Person.objects.filter(
+            flag_show=True, is_super_admin=True, is_deleted=False
+        )
+        admin_serializer1 = PersonGetSerializer(
+            super_admin, context={"lang": lang}, many=True
+        )
+        super_admin_data = admin_serializer1.data
+        combined_data = sorted(
+            super_admin_data,
+            key=lambda x: (
+                x["surname"],  # Primary sorting by surname
+                x["first_name"],  # Secondary sorting by first name
+            ),
+        )
+        combined_data = sorted(
+            combined_data,
+            key=lambda x: (x["surname"] != surname, x["surname"], x["first_name"]),
+        )
+
+        if lang == "guj":
+            error_message = (
+                "તમારી નવા સભ્ય માં નોંધણી થઈ ગઈ છે. હવે તમે કૃપા કરી ને કાર્યકર્તાને સંપર્ક કરો."
+            )
+        else:
+            error_message = "You are successfully registered as one of our members. Now you can contact your admin."
+
+        return {
+            "message": error_message,
+            "admin_data": admin_data + combined_data,
+        }
+
+    return {"message": "", "admin_data": []}
 
 class DistrictDetailView(APIView):
     @swagger_auto_schema(
@@ -1667,6 +1818,17 @@ class V4AdminPersonDetailView(APIView):
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
         samaj_id = request.data.get('samaj')
+        # Auto-resolve samaj if not explicitly provided:
+        # 1. Prefer the samaj linked to the selected surname (Surname.samaj FK)
+        # 2. Fall back to looking up by village ID sent in request
+        if not samaj_id and persons_surname_wise and persons_surname_wise.samaj_id:
+            samaj_id = persons_surname_wise.samaj_id
+        if not samaj_id:
+            village_id = request.data.get('village')
+            if village_id:
+                samaj_from_village = Samaj.objects.filter(village_id=int(village_id)).first()
+                if samaj_from_village:
+                    samaj_id = samaj_from_village.id
         person_data = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -1689,6 +1851,63 @@ class V4AdminPersonDetailView(APIView):
         serializer = PersonV4Serializer(data=person_data)
         if serializer.is_valid():
             persons = serializer.save()
+
+            # surname, city, state, samaj, out_of_country are SerializerMethodField
+            # (read-only) in PersonV4Serializer, so they are NOT saved by serializer.save().
+            # Validate each FK against DB before assigning to avoid IntegrityErrors.
+            fk_update_fields = []
+
+            # Surname: use the already-queried object (guaranteed to exist)
+            if persons_surname_wise:
+                persons.surname_id = persons_surname_wise.id
+                fk_update_fields.append('surname')
+
+            # City: look up first to ensure it exists
+            if city:
+                try:
+                    city_obj = City.objects.filter(pk=int(city)).first()
+                    if city_obj:
+                        persons.city_id = city_obj.id
+                        fk_update_fields.append('city')
+                except (ValueError, TypeError):
+                    pass
+
+            # State: look up first to ensure it exists
+            if state:
+                try:
+                    city_state_obj = State.objects.filter(pk=int(state)).first()
+                    if city_state_obj:
+                        persons.state_id = city_state_obj.id
+                        fk_update_fields.append('state')
+                except (ValueError, TypeError):
+                    pass
+
+            # Samaj: use resolved samaj_id (from surname or village fallback above)
+            if samaj_id:
+                try:
+                    samaj_obj = Samaj.objects.filter(pk=int(samaj_id)).first()
+                    if samaj_obj:
+                        persons.samaj_id = samaj_obj.id
+                        fk_update_fields.append('samaj')
+                except (ValueError, TypeError):
+                    pass
+
+            # Country: look up first to ensure it exists
+            if out_of_country:
+                try:
+                    country_obj = Country.objects.filter(pk=int(out_of_country)).first()
+                    if country_obj:
+                        persons.out_of_country_id = country_obj.id
+                        fk_update_fields.append('out_of_country')
+                except (ValueError, TypeError):
+                    pass
+
+            if fk_update_fields:
+                persons.save(update_fields=fk_update_fields)
+
+            # Refresh from DB to clear in-memory FK caches (samaj→village→taluka→district)
+            persons.refresh_from_db()
+
             parent_serializer = ParentChildRelationSerializer(data={
                                 'parent': father,
                                 'child': persons.id,
@@ -1734,7 +1953,7 @@ class V4AdminPersonDetailView(APIView):
         if not admin_person.is_admin and not admin_person.is_super_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
         
-        user_id = request.data.get('user_id')
+        user_id = request.data.get('id')
         if not user_id:
             return Response({'message': 'Missing User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         print(request.data)
@@ -1806,9 +2025,9 @@ class V4AdminPersonDetailView(APIView):
  
             father_data = ParentChildRelation.objects.filter(child=persons.id)
             if father_data.exists():
-                father_data.update(child=persons.id, parent=father)
-            else :
-                ParentChildRelation.objects.create(child=persons.id, parent=father, created_user=admin_user_id)
+                father_data.update(child=persons.id, parent_id=father)
+            else:
+                ParentChildRelation.objects.create(child=persons, parent_id=father, created_user=persons)
  
             for child in children:
                 child_data = ParentChildRelation.objects.filter(child=child)
@@ -1824,11 +2043,12 @@ class V4AdminPersonDetailView(APIView):
                         child.update(parent_id= int(top_member))
                             
             lang_data = TranslatePerson.objects.filter(person_id=persons.id).filter(language='guj')
-            if lang_data.exists() :
-                lang_data = lang_data.update(first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address)
+            if lang_data.exists():
+                lang_data.update(first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address)
             else:
-                lang_data = TranslatePerson.objects.create(person_id=persons.id, first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address,out_of_address=guj_out_of_address, language=lang)
-               
+                TranslatePerson.objects.create(person_id=persons, first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address, language=lang)
+
+            persons.refresh_from_db()
             return Response({"person": AdminPersonGetSerializer(persons, context={'lang': lang}).data}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

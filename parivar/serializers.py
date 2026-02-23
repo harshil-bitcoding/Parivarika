@@ -818,6 +818,9 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
     thumb_profile = serializers.SerializerMethodField(read_only=True, required=False)
     trans_first_name = serializers.SerializerMethodField(read_only=True, required=False)
     trans_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+    village = serializers.SerializerMethodField(source="samaj.village", required=False)
+    taluka = serializers.SerializerMethodField(source="samaj.taluka", required=False)
+    district = serializers.SerializerMethodField(source="samaj.district", required=False)
 
     class Meta:
         model = Person
@@ -850,6 +853,9 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             "out_of_mobile",
             "trans_first_name",
             "trans_middle_name",
+            "village",
+            "taluka",
+            "district",
         ]
 
     def get_profile(self, obj):
@@ -857,6 +863,100 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             return obj.profile.url
         else:
             return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_thumb_profile(self, obj):
+        if obj.thumb_profile and obj.thumb_profile != "":
+            return obj.thumb_profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
+
+    def get_guj_first_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.first_name if translate_data else ""
+
+    def get_guj_middle_name(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.middle_name if translate_data else ""
+
+    def get_guj_address(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.address if translate_data else ""
+
+    def get_guj_out_of_address(self, obj):
+        translate_data = TranslatePerson.objects.filter(
+            person_id=obj.id, language="guj", is_deleted=False
+        ).first()
+        return translate_data.out_of_address if translate_data else ""
+
+    def get_city(self, obj):
+        if obj.city is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.city.guj_name
+            return obj.city.name
+        return ""
+
+    def get_state(self, obj):
+        if obj.state is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.state.guj_name
+            return obj.state.name
+        return ""
+
+    def get_village(self, obj):
+        if obj.samaj and obj.samaj.village:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.samaj.village.guj_name
+            return obj.samaj.village.name
+        return ""
+
+    def get_taluka(self, obj):
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.samaj.village.taluka.guj_name
+            return obj.samaj.village.taluka.name
+        return ""
+
+    def get_district(self, obj):
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka and obj.samaj.village.taluka.district:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.samaj.village.taluka.district.guj_name
+            return obj.samaj.village.taluka.district.name
+        return ""
+
+    def get_out_of_country(self, obj):
+        if obj.out_of_country is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.out_of_country.guj_name
+            else:
+                return obj.out_of_country.name
+
+        return ""
+
+    def get_surname(self, obj):
+        if obj.surname is not None:
+            lang = self.context.get("lang", "en")
+            if lang == "guj":
+                return obj.surname.guj_name
+            return obj.surname.name
+        return ""
+
+    def get_trans_first_name(self, obj):
+        return self.get_guj_first_name(obj) or (obj.guj_first_name if hasattr(obj, 'guj_first_name') and obj.guj_first_name else obj.first_name)
+
+    def get_trans_middle_name(self, obj):
+        return self.get_guj_middle_name(obj) or (obj.guj_middle_name if hasattr(obj, 'guj_middle_name') and obj.guj_middle_name else obj.middle_name)
 
 class CountryWiseMemberSerializer(serializers.ModelSerializer):
     surname = serializers.SerializerMethodField(read_only=True, required=False)

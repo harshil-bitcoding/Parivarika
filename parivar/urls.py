@@ -96,11 +96,11 @@ urlpatterns = [
         name="admin-person-list",
     ),
 
-    path(
-        "api/v4/admin-person/<int:pk>/<int:admin_uid>",
-        V4Views.V4AdminPersonDetailView.as_view(),
-        name="admin-person-list",
-    ),
+    # path(
+    #     "api/v4/admin-person/<int:pk>/<int:admin_uid>",
+    #     V4Views.V4AdminPersonDetailView.as_view(),
+    #     name="admin-person-list",
+    # ),
     path(
         "api/v4/city/<int:state_id>",
         V4Views.CityDetailView.as_view(),
