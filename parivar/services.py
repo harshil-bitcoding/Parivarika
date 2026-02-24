@@ -5,6 +5,7 @@ import openpyxl
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.utils import timezone
+from django.core.files.base import ContentFile
 from .models import Surname, Person, District, Taluka, Village, Country, ParentChildRelation, Samaj
 
 class LocationResolverService:
@@ -58,6 +59,33 @@ class LocationResolverService:
         return village, status
 
 class CSVImportService:
+    @staticmethod
+    def resolve_image_path(image_path, field_type='profile'):
+        """
+        Normalizes image file paths for profile and thumb_profile fields.
+        
+        Returns:
+            tuple: (normalized_path, empty_string) for valid paths, (None, "") for invalid
+        """
+        if not image_path or not str(image_path).strip():
+            return None, ""
+        
+        image_path = str(image_path).strip()
+        
+        # Skip external URLs (HTTP/HTTPS)
+        if image_path.startswith(('http://', 'https://')):
+            return None, ""
+        
+        # Remove /media/ prefix if present
+        if image_path.startswith('/media/'):
+            image_path = image_path.replace('/media/', '', 1)
+        
+        # Normalize path separators
+        image_path = image_path.replace('\\', '/')
+        
+        # Return the normalized path
+        return image_path, ""
+
     @staticmethod
     def clean_val(val):
         if val is None:
@@ -281,11 +309,11 @@ class CSVImportService:
                                         elif "optional" in combined_col_str: col_map['mobile2'] = j
                                         elif 'mobile1' not in col_map: col_map['mobile1'] = j
                                     else:
-                                        if any(k.lower() == combined_col_str or k.lower() == next_cell_val.lower() for k in keys):
-                                            col_map[key] = j
-                                        elif key not in col_map:
+                                        if key not in col_map:
+                                           if any(k.lower() in combined_col_str for k in keys):
                                             col_map[key] = j
                     break
+            print(col_map)
 
             if header_row_idx == -1:
                 continue
@@ -367,23 +395,17 @@ class CSVImportService:
                         'is_demo': is_demo
                     }
 
+                    # Handle profile image path
                     if profile_path:
-                        # Clean path if starts with /media/
-                        if profile_path.startswith('/media/'):
-                            profile_path = profile_path.replace('/media/', '', 1)
-                        # Only skip if it's an external URL (http/https)
-                        if '://' not in profile_path or profile_path.startswith(('http://', 'https://')):
-                            if not profile_path.startswith(('http://', 'https://')):
-                                person_defaults['profile'] = profile_path
+                        profile_value, profile_error = cls.resolve_image_path(profile_path, 'profile')
+                        if profile_value:
+                            person_defaults['profile'] = profile_value
 
+                    # Handle thumbnail profile image path
                     if thumb_profile_path:
-                        # Clean path if starts with /media/
-                        if thumb_profile_path.startswith('/media/'):
-                            thumb_profile_path = thumb_profile_path.replace('/media/', '', 1)
-                        # Only skip if it's an external URL (http/https)
-                        if '://' not in thumb_profile_path or thumb_profile_path.startswith(('http://', 'https://')):
-                            if not thumb_profile_path.startswith(('http://', 'https://')):
-                                person_defaults['thumb_profile'] = thumb_profile_path
+                        thumb_value, thumb_error = cls.resolve_image_path(thumb_profile_path, 'thumb_profile')
+                        if thumb_value:
+                            person_defaults['thumb_profile'] = thumb_value
                     
                     if mob1:
                         # Update or create if mobile is present
