@@ -7,29 +7,6 @@ import ast
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor
 
-
-def build_image_url(request, image_field, default=None):
-    """
-    Returns a full absolute URL for an ImageField.
-
-    - If the image field has a value, returns the full URL
-      (e.g. http://192.168.1.10:8000/media/thumb_img/photo.jpg).
-    - Falls back to `default` (typically os.getenv("DEFAULT_PROFILE_PATH"))
-      as a full URL if request is available, otherwise as-is.
-    - `request` is optional; pass None and you get relative URLs as before.
-    """
-    import os
-    if image_field and getattr(image_field, 'name', None):
-        relative = image_field.url          # e.g. /media/thumb_img/photo.jpg
-        if request:
-            return request.build_absolute_uri(relative)
-        return relative
-    # Fallback to default image
-    fallback = default or os.getenv("DEFAULT_PROFILE_PATH", "")
-    if fallback and request:
-        return request.build_absolute_uri(fallback)
-    return fallback
-
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -423,11 +400,19 @@ class PersonV4Serializer(serializers.ModelSerializer):
         data = super().to_representation(source_instance)
         
         # Profile URLs
-        request = self.context.get('request')
-        profile_img   = (getattr(source_instance, 'profile', None) or getattr(source_instance, 'profile_pic', None))
-        thumb_img     = (getattr(source_instance, 'thumb_profile', None) or getattr(source_instance, 'profile_pic', None))
-        data["profile"]       = build_image_url(request, profile_img)
-        data["thumb_profile"] = build_image_url(request, thumb_img)
+        if hasattr(source_instance, 'profile') and source_instance.profile:
+            data["profile"] = source_instance.profile.url
+        elif hasattr(source_instance, 'profile_pic') and source_instance.profile_pic:
+            data["profile"] = source_instance.profile_pic.url
+        else:
+            data["profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+
+        if hasattr(source_instance, 'thumb_profile') and source_instance.thumb_profile:
+            data["thumb_profile"] = source_instance.thumb_profile.url
+        elif hasattr(source_instance, 'profile_pic') and source_instance.profile_pic:
+            data["thumb_profile"] = source_instance.profile_pic.url
+        else:
+            data["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH")
 
         if lang == "guj":
             if is_demo:
@@ -933,10 +918,16 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
         ]
 
     def get_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.profile)
+        if obj.profile:
+            return obj.profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_thumb_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.thumb_profile)
+        if obj.thumb_profile and obj.thumb_profile != "":
+            return obj.thumb_profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_guj_first_name(self, obj):
         translate_data = TranslatePerson.objects.filter(
@@ -1058,10 +1049,14 @@ class CountryWiseMemberSerializer(serializers.ModelSerializer):
         return obj.surname.guj_name if lang == "guj" and obj.surname.guj_name else obj.surname.name
 
     def get_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.profile)
+        if obj.profile and obj.profile.name:
+            return f"/media/{obj.profile.name}"
+        return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_thumb_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.thumb_profile)
+        if obj.thumb_profile and obj.thumb_profile.name:
+            return f"/media/{obj.thumb_profile.name}"
+        return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_trans_first_name(self, obj):
         if hasattr(obj, 'trans_fname'):
@@ -1232,12 +1227,20 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
         return ""
 
     def get_profile(self, obj):
-        image = (getattr(obj, 'profile', None) or getattr(obj, 'profile_pic', None))
-        return build_image_url(self.context.get('request'), image)
+        if hasattr(obj, 'profile') and obj.profile:
+            return obj.profile.url
+        elif hasattr(obj, 'profile_pic') and obj.profile_pic:
+            return obj.profile_pic.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_thumb_profile(self, obj):
-        image = (getattr(obj, 'thumb_profile', None) or getattr(obj, 'profile_pic', None))
-        return build_image_url(self.context.get('request'), image)
+        if hasattr(obj, 'thumb_profile') and obj.thumb_profile and obj.thumb_profile != "":
+            return obj.thumb_profile.url
+        elif hasattr(obj, 'profile_pic') and obj.profile_pic:
+            return obj.profile_pic.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
         
     def get_samaj(self, obj):
         lang = self.context.get("lang", "en")
@@ -1496,10 +1499,16 @@ class PersonGetSerializer(serializers.ModelSerializer):
         return ""
 
     def get_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.profile)
+        if obj.profile:
+            return obj.profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_thumb_profile(self, obj):
-        return build_image_url(self.context.get('request'), obj.thumb_profile)
+        if obj.thumb_profile and obj.thumb_profile != "":
+            return obj.thumb_profile.url
+        else:
+            return os.getenv("DEFAULT_PROFILE_PATH")
 
     def get_state(self, obj):
         if obj.state is not None:
