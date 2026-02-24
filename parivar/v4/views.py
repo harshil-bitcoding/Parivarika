@@ -2852,6 +2852,8 @@ class V4PersonDetailView(APIView):
         
     def post(self, request):
         surname = request.data.get('surname', 0)
+        if not surname:
+            surname = 0
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
         father = request.data.get('father', 0)        
         top_member = 0
@@ -2878,6 +2880,10 @@ class V4PersonDetailView(APIView):
         status_name = request.data.get('status')
         is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
+        samaj = request.data.get('samaj')
+        # Auto-derive samaj from the surname if not explicitly provided
+        if not samaj and persons_surname_wise and persons_surname_wise.samaj:
+            samaj = persons_surname_wise.samaj.id
         person_data = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -2892,9 +2898,10 @@ class V4PersonDetailView(APIView):
             'mobile_number1': mobile_number1,
             'mobile_number2': mobile_number2,
             'status': status_name,
-            'surname': surname,
+            'surname': surname if surname else None,
             'is_admin': is_admin,
-            'is_registered_directly': is_registered_directly
+            'is_registered_directly': is_registered_directly,
+            'samaj': samaj,
         }
         serializer = PersonSerializer(data=person_data)
         if serializer.is_valid():

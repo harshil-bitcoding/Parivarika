@@ -490,10 +490,18 @@ class PersonSerializer(serializers.ModelSerializer):
             "is_registered_directly",
             "update_field_message",
             "platform",
+            "trans_first_name",
+            "trans_middle_name",
+            "district",
+            "taluka",
+            "village",
+            "samaj",
         ]
-
     trans_first_name = serializers.SerializerMethodField(read_only=True, required=False)
     trans_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+    district = serializers.SerializerMethodField(read_only=True, required=False)
+    taluka = serializers.SerializerMethodField(read_only=True, required=False)
+    village = serializers.SerializerMethodField(read_only=True, required=False)
 
     def get_trans_first_name(self, obj):
         translate_data = TranslatePerson.objects.filter(
@@ -510,6 +518,57 @@ class PersonSerializer(serializers.ModelSerializer):
         if translate_data and translate_data.middle_name:
             return translate_data.middle_name
         return obj.guj_middle_name if hasattr(obj, 'guj_middle_name') and obj.guj_middle_name else obj.middle_name
+
+    def get_surname(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.surname:
+            if lang == "guj" and obj.surname.guj_name:
+                return obj.surname.guj_name
+            return obj.surname.name
+        return None
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        lang = self.context.get("lang", "en")
+        if instance.surname:
+            if lang == "guj" and instance.surname.guj_name:
+                representation["surname"] = instance.surname.guj_name
+            else:
+                representation["surname"] = instance.surname.name
+        else:
+            representation["surname"] = ""
+        return representation
+    
+    def get_village(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village:
+            if lang == "guj" and obj.samaj.village.guj_name:
+                return obj.samaj.village.guj_name
+            return obj.samaj.village.name
+        return ""
+
+    def get_taluka(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka:
+            taluka = obj.samaj.village.taluka
+            if lang == "guj" and taluka.guj_name:
+                return taluka.guj_name
+            return taluka.name
+        return ""
+
+    def get_district(self, obj):
+        lang = self.context.get("lang", "en")
+        if (
+            obj.samaj
+            and obj.samaj.village
+            and obj.samaj.village.taluka
+            and obj.samaj.village.taluka.district
+        ):
+            district = obj.samaj.village.taluka.district
+            if lang == "guj" and district.guj_name:
+                return district.guj_name
+            return district.name
+        return ""
 
 # class DemoPersonSerializer(PersonSerializer):
 #     class Meta(PersonSerializer.Meta):
@@ -1376,7 +1435,53 @@ class PersonGetSerializer(serializers.ModelSerializer):
             "is_show_old_contact",
             "trans_first_name",
             "trans_middle_name",
+            "district",
+            "taluka",
+            "village",
+            "samaj",
         ]
+
+    district = serializers.SerializerMethodField(read_only=True, required=False)
+    taluka = serializers.SerializerMethodField(read_only=True, required=False)
+    village = serializers.SerializerMethodField(read_only=True, required=False)
+    samaj = serializers.SerializerMethodField(read_only=True, required=False)
+
+    def get_samaj(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj:
+            return obj.samaj.guj_name if lang == "guj" and obj.samaj.guj_name else obj.samaj.name
+        return None
+
+    def get_village(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village:
+            if lang == "guj" and obj.samaj.village.guj_name:
+                return obj.samaj.village.guj_name
+            return obj.samaj.village.name
+        return ""
+
+    def get_taluka(self, obj):
+        lang = self.context.get("lang", "en")
+        if obj.samaj and obj.samaj.village and obj.samaj.village.taluka:
+            taluka = obj.samaj.village.taluka
+            if lang == "guj" and taluka.guj_name:
+                return taluka.guj_name
+            return taluka.name
+        return ""
+
+    def get_district(self, obj):
+        lang = self.context.get("lang", "en")
+        if (
+            obj.samaj
+            and obj.samaj.village
+            and obj.samaj.village.taluka
+            and obj.samaj.village.taluka.district
+        ):
+            district = obj.samaj.village.taluka.district
+            if lang == "guj" and district.guj_name:
+                return district.guj_name
+            return district.name
+        return ""
 
     # def get_password(self, obj) :
     #     is_password_required = self.context.get('is_password_required', False)
