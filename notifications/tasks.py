@@ -22,7 +22,8 @@ def notification_created(
     player_ids_ios=None,
 ):
     now = datetime.now()
-    filename = "celery.log"
+    # filename = "celery.log"
+    filename = "/tmp/celery.log"
     message = f"\nstart celery notification send time :- {now}"
     append_to_log(filename, message)
     # Android notification
@@ -64,11 +65,19 @@ def notification_created(
         "Content-Type": "application/json",
     }
 
-    response = requests.post(url, headers=headers, data=payload)
-    message = f"Response :- {response.text}"
-    if response.status_code != 200:
-        message = f"Response Error :- {response.text}"
-    append_to_log(filename, message)
+    # response = requests.post(url, headers=headers, data=payload)    
+    # message = f"Response :- {response.text}"
+    # if response.status_code != 200:
+    #     message = f"Response Error :- {response.text}"
+    # append_to_log(filename, message)
+    # ── OneSignal calls commented out for local testing ───────────────────
+    # response = requests.post(url, headers=headers, data=payload)
+    # message = f"Response :- {response.text}"
+    # if response.status_code != 200:
+    #     message = f"Response Error :- {response.text}"
+    # append_to_log(filename, message)
+    append_to_log(filename, f"[TEST MODE] Android payload ready — title: {title}, targets: {player_ids_android or 'All'}")
+
     # iOS notification
     if is_all_segment != "false":
 
@@ -103,9 +112,15 @@ def notification_created(
         "Content-Type": "application/json",
         "Cookie": "__cf_bm=5LdmNasmbo8fgB1DrbNd5lm6Gq_pCZ3LYwu4zAvoQAs-1716875406-1.0.1.1-XsyawWvQvRMpi9DNiWiGyLphXwziSoiXNzYcNwq6SFMpsKnMD1_wBi7VOSn38F4J6lOdbcceH24KgRKIshs1dQ",
     }
-    response = requests.post(url, headers=headers, data=payload)
-    message = f"Response :- {response.text}"
-    append_to_log(filename, message)
+    # response = requests.post(url, headers=headers, data=payload)
+    # message = f"Response :- {response.text}"
+    # append_to_log(filename, message)
+    # ── OneSignal calls commented out for local testing ───────────────────
+    # response = requests.post(url, headers=headers, data=payload)
+    # message = f"Response :- {response.text}"
+    # append_to_log(filename, message)
+    append_to_log(filename, f"[TEST MODE] iOS payload ready — title: {title}, targets: {player_ids_ios or 'All'}")
+
     now = datetime.now()
     message = f"\n end celery notification send time :- {now}"
     append_to_log(filename, message)
