@@ -540,7 +540,7 @@ class AllVillageListView(APIView):
             taluka__is_active=True, 
             taluka__district__is_active=True
         ).order_by('name')
-        serializer = VillageSerializer(villages, many=True, context={'lang': lang})
+        serializer = VillageSerializer(villages, many=True, context={'lang': lang, 'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -711,8 +711,8 @@ class  V4RelationtreeAPIView(APIView):
                 data.append({
                     "id": p.id,
                     "date_of_birth": p.date_of_birth,
-                    "profile": p.profile.url if p.profile else os.getenv("DEFAULT_PROFILE_PATH"),
-                    "thumb_profile": p.thumb_profile.url if p.thumb_profile else os.getenv("DEFAULT_PROFILE_PATH"),
+                    "profile": request.build_absolute_uri(p.profile.url) if p.profile else request.build_absolute_uri(os.getenv("DEFAULT_PROFILE_PATH", "")),
+                    "thumb_profile": request.build_absolute_uri(p.thumb_profile.url) if p.thumb_profile else request.build_absolute_uri(os.getenv("DEFAULT_PROFILE_PATH", "")),
                     "mobile_number1": p.mobile_number1,
                     "mobile_number2": p.mobile_number2,
                     "out_of_country": p.out_of_country.name if p.out_of_country else "", # Minimal for relation-tree
@@ -1091,22 +1091,22 @@ class V4PersonDetailView(APIView):
             person = Person.objects.get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
-                person = PersonGetV4Serializer(person, context={'lang': lang}).data
+                person = PersonGetV4Serializer(person, context={'lang': lang, 'request': request}).data
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
                 child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
                 if child_data.exists():
-                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
+                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang, 'request': request}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
                 parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
                 if parent_data:
-                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
+                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang, 'request': request}).data
                     person['parent'] = parent_data.get("parent")
                     brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
                     if brother_data.exists():
-                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
+                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang, 'request': request}).data
                         for brother in brother_data:
                             if int(person["id"]) != int(brother["child"]["id"]) :
                                 person['brother'].append(brother.get("child"))
@@ -1212,7 +1212,7 @@ class V4PersonDetailView(APIView):
                 person_translate_serializer = TranslatePersonSerializer(data=person_translate_data)
                 if person_translate_serializer.is_valid():
                     person_translate_serializer.save()
-            return Response(PersonGetV4Serializer(persons, context={'lang': lang}).data, status=status.HTTP_201_CREATED)
+            return Response(PersonGetV4Serializer(persons, context={'lang': lang, 'request': request}).data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -1346,7 +1346,7 @@ class V4PersonDetailView(APIView):
                     if person_translate_serializer.is_valid():
                         person_translate_serializer.save()
             return Response({
-                "person": PersonGetV4Serializer(persons, context={'lang': lang}).data
+                "person": PersonGetV4Serializer(persons, context={'lang': lang, 'request': request}).data
             }, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1733,22 +1733,22 @@ class V4AdminPersonDetailView(APIView):
             person = Person.objects.get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
-                person = AdminPersonGetSerializer(person, context={'lang': lang}).data
+                person = AdminPersonGetSerializer(person, context={'lang': lang, 'request': request}).data
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
                 child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
                 if child_data.exists():
-                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
+                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang, 'request': request}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
                 parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
                 if parent_data:
-                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
+                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang, 'request': request}).data
                     person['parent'] = parent_data.get("parent")
                     brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
                     if brother_data.exists():
-                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
+                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang, 'request': request}).data
                         for brother in brother_data:
                             if int(person["id"]) != int(brother["child"]["id"]) :
                                 person['brother'].append(brother.get("child"))
@@ -2049,7 +2049,7 @@ class V4AdminPersonDetailView(APIView):
                 TranslatePerson.objects.create(person_id=persons, first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address, language=lang)
 
             persons.refresh_from_db()
-            return Response({"person": AdminPersonGetSerializer(persons, context={'lang': lang}).data}, status=status.HTTP_200_OK)
+            return Response({"person": AdminPersonGetSerializer(persons, context={'lang': lang, 'request': request}).data}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
@@ -2827,22 +2827,22 @@ class V4PersonDetailView(APIView):
             person = Person.objects.get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
-                person = PersonGetSerializer(person, context={'lang': lang}).data
+                person = PersonGetSerializer(person, context={'lang': lang, 'request': request}).data
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
                 child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
                 if child_data.exists():
-                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
+                    child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang, 'request': request}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
                 parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
                 if parent_data:
-                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
+                    parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang, 'request': request}).data
                     person['parent'] = parent_data.get("parent")
                     brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
                     if brother_data.exists():
-                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
+                        brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang, 'request': request}).data
                         for brother in brother_data:
                             if int(person["id"]) != int(brother["child"]["id"]) :
                                 person['brother'].append(brother.get("child"))
@@ -2953,7 +2953,7 @@ class V4PersonDetailView(APIView):
                 person_translate_serializer = TranslatePersonSerializer(data=person_translate_data)
                 if person_translate_serializer.is_valid():
                     person_translate_serializer.save()
-            return Response(PersonGetSerializer(persons, context={'lang': lang}).data, status=status.HTTP_201_CREATED)
+            return Response(PersonGetSerializer(persons, context={'lang': lang, 'request': request}).data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -3085,7 +3085,7 @@ class V4PersonDetailView(APIView):
                     if person_translate_serializer.is_valid():
                         person_translate_serializer.save()
             return Response({
-                "person": PersonGetSerializer(persons, context={'lang': lang}).data
+                "person": PersonGetSerializer(persons, context={'lang': lang, 'request': request}).data
             }, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -3213,7 +3213,7 @@ class CityDetailView(APIView):
             return Response({'error': 'State not found'}, status=status.HTTP_404_NOT_FOUND)
         state = state.state.all()
         lang = request.GET.get('lang', 'en')
-        serializer = CitySerializer(state, many=True, context={'lang': lang})
+        serializer = CitySerializer(state, many=True, context={'lang': lang, 'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class StateDetailView(APIView):
@@ -3221,7 +3221,7 @@ class StateDetailView(APIView):
     def get(self, request):
         state = State.objects.all()
         lang = request.GET.get('lang', 'en')
-        serializer = StateSerializer(state, many=True, context={'lang': lang})
+        serializer = StateSerializer(state, many=True, context={'lang': lang, 'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class CountryDetailView(APIView):
@@ -3229,7 +3229,7 @@ class CountryDetailView(APIView):
     def get(self, request):
         country = Country.objects.all()
         lang = request.GET.get('lang', 'en')
-        serializer = CountrySerializer(country, many=True, context={'lang': lang})
+        serializer = CountrySerializer(country, many=True, context={'lang': lang, 'request': request})
         data = sorted(serializer.data, key=lambda x: (x["name"]))
         return Response(data,  status=status.HTTP_200_OK)
     
