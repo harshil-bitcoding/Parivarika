@@ -575,6 +575,52 @@ class PersonSerializer(serializers.ModelSerializer):
             return district.name
         return ""
 
+    def validate(self, data):
+        import re
+        from django.db.models import Q
+        from .models import Person
+
+        # ---------- MOBILE VALIDATION ----------
+        mobile_number1 = (data.get("mobile_number1") or "").strip()
+        mobile_number2 = (data.get("mobile_number2") or "").strip()
+
+        mobile_numbers = [m for m in [mobile_number1, mobile_number2] if m]
+
+        # allow empty mobiles
+        if mobile_numbers:
+
+            # format validation
+            for num in mobile_numbers:
+                if not re.match(r"^\d{7,14}$", num):
+                    raise serializers.ValidationError({
+                        "message": "Mobile number must be 7-14 digits only."
+                    })
+
+            # same number check
+            if len(mobile_numbers) == 2 and mobile_number1 == mobile_number2:
+                raise serializers.ValidationError({
+                    "message": "Mobile number 1 and 2 cannot be same."
+                })
+
+            # uniqueness check
+            person_id = self.instance.id if self.instance else None
+
+            query = Q()
+            for num in mobile_numbers:
+                query |= Q(mobile_number1=num) | Q(mobile_number2=num)
+
+            existing = Person.objects.filter(query, is_deleted=False)
+
+            if person_id:
+                existing = existing.exclude(id=person_id)
+
+            if existing.exists():
+                raise serializers.ValidationError({
+                    "message": "Mobile number already registered."
+                })
+
+        return data
+
 # class DemoPersonSerializer(PersonSerializer):
 #     class Meta(PersonSerializer.Meta):
 #         model = DemoPerson
