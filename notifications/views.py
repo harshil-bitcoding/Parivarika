@@ -1108,7 +1108,7 @@ class BirthdaySendView(APIView):
 
         today_md = _date.today().strftime("%m-%d")  # e.g. "02-24"
 
-        log_file = "birthday_cron.log"
+        log_file = "/tmp/birthday_cron.log"
         now = datetime.now()
         append_to_log(log_file, f"\n[{now}] Birthday cron started — matching MM-DD = {today_md}")
 
@@ -1118,6 +1118,7 @@ class BirthdaySendView(APIView):
             .select_related("surname", "samaj")
             .only(
                 "id", "first_name", "middle_name", "date_of_birth",
+                "mobile_number1", "mobile_number2",
                 "surname", "samaj",
             )
         )
@@ -1152,6 +1153,35 @@ class BirthdaySendView(APIView):
                     f"  Skipped person id={bday_person.id} — no samaj assigned.",
                 )
                 continue
+
+            # ── Eligibility check ─────────────────────────────────────────
+            # Rule: if age >= 30 AND no mobile number → skip (adult with no app).
+            # Under 30 with no mobile → still notify (family will see it).
+            # Anyone WITH a mobile → always notify.
+            has_mobile = bool(
+                (bday_person.mobile_number1 or "").strip()
+                or (bday_person.mobile_number2 or "").strip()
+            )
+            if not has_mobile:
+                dob_str = (bday_person.date_of_birth or "").strip()[:10]  # YYYY-MM-DD
+                try:
+                    from datetime import date as _date
+                    birth_date = _date.fromisoformat(dob_str)
+                    today_d = _date.today()
+                    age = (
+                        today_d.year - birth_date.year
+                        - ((today_d.month, today_d.day) < (birth_date.month, birth_date.day))
+                    )
+                except Exception:
+                    age = 0  # can't compute age, assume eligible
+
+                if age >= 30:
+                    append_to_log(
+                        log_file,
+                        f"  Skipped person id={bday_person.pk} — age {age} >= 30, no mobile.",
+                    )
+                    continue
+            # ─────────────────────────────────────────────────────────────
 
             # Build notification title & body
             surname_name = bday_person.surname.name if bday_person.surname else ""
