@@ -25,4 +25,16 @@ urlpatterns = [
         views.NotificationDeleteView.as_view(),
         name="remove_notification",
     ),
+    # Birthday API (standalone GET endpoint)
+    path(
+        "api/v4/birthdays",
+        views.BirthdayAPIView.as_view(),
+        name="birthday_list",
+    ),
+    # Birthday Cron Send API (triggered daily at 12:00 AM by system cron)
+    path(
+        "api/v4/send-birthday-notifications",
+        views.BirthdaySendView.as_view(),
+        name="birthday_send",
+    ),
 ]

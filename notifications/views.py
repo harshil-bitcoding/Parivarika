@@ -17,20 +17,250 @@ from notifications.models import Notification, NotificationImage, PersonPlayerId
 from notifications.serializers import (
     NotificationCreateSerializer,
     NotificationNewGetSerializer,
+    BirthdayPersonSerializer,
 )
 from notifications.time_conveter import convert_time_format
 from parivar.models import Person, Surname
 from notifications.tasks import notification_created
+from notifications.helpers import get_birthday_queryset, split_birthdays
+from parivar.utils import get_person_queryset
 from parivar.v3.views import append_to_log
 from PIL import Image
 
 
 class NotificationDetailView(APIView):
 
+    # def get(self, request):
+    #     target_date = datetime.now()
+    #     person_id = request.GET.get("person_id")
+    #     is_event_show = request.GET.get("is_event_show","false").lower()
+
+    #     today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    #     today_end = target_date.replace(hour=23, minute=59, second=59, microsecond=59)
+
+    #     if person_id:
+    #         try:
+    #             person = Person.objects.get(id=person_id, is_deleted=False)
+    #         except Person.DoesNotExist:
+    #             return Response(
+    #                 {"message": "Person is Not Found"}, status=status.HTTP_404_NOT_FOUND
+    #             )
+
+    #         person_surename_ids = [person.surname.id]
+    #         if is_event_show == "false":
+
+    #             if (
+    #                 person.flag_show == True
+    #                 and person.is_admin == False
+    #                 and person.is_super_admin == False
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     to_person=person.id,
+    #                     is_event=False,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     to_person=person.id,
+    #                     is_event=False,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end, is_event=False
+    #                 )
+    #             elif (
+    #                 person.flag_show == True
+    #                 and person.is_admin == True
+    #                 and person.is_super_admin == False
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     (
+    #                         Q(filter__All=True)
+    #                         | Q(
+    #                             filter__surname__contains=[
+    #                                 {"id": id} for id in person_surename_ids
+    #                             ]
+    #                         )
+    #                     ),
+    #                     is_event=False,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     (
+    #                         Q(filter__All=True)
+    #                         | Q(
+    #                             filter__surname__contains=[
+    #                                 {"id": id} for id in person_surename_ids
+    #                             ]
+    #                         )
+    #                     ),
+    #                     is_event=False,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end, is_event=False
+    #                 )
+    #             elif (
+    #                 person.flag_show == True
+    #                 and person.is_admin == False
+    #                 and person.is_super_admin == True
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     is_event=False,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     is_event=False,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end, is_event=False
+    #                 )
+    #         else:
+    #             if (
+    #                 person.flag_show == True
+    #                 and person.is_admin == False
+    #                 and person.is_super_admin == False
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     to_person=person.id,
+    #                     is_event=True,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     to_person=person.id,
+    #                     is_event=True,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end,
+    #                     is_event=True,
+    #                 )
+    #             elif (
+    #                 person.flag_show == True
+    #                 and person.is_admin == True
+    #                 and person.is_super_admin == False
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     (
+    #                         Q(filter__All=True)
+    #                         | Q(
+    #                             filter__surname__contains=[
+    #                                 {"id": id} for id in person_surename_ids
+    #                             ]
+    #                         )
+    #                     ),
+    #                     is_event=True,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     (
+    #                         Q(filter__All=True)
+    #                         | Q(
+    #                             filter__surname__contains=[
+    #                                 {"id": id} for id in person_surename_ids
+    #                             ]
+    #                         )
+    #                     ),
+    #                     is_event=True,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end,
+    #                     is_event=True,
+    #                 )
+    #             elif (
+    #                 person.flag_show == True
+    #                 and person.is_admin == False
+    #                 and person.is_super_admin == True
+    #             ):
+    #                 present_notification = Notification.objects.filter(
+    #                     Q(start_date__lte=today_end),
+    #                     Q(expire_date__gte=today_start),
+    #                     is_event=True,
+    #                 ).order_by("expire_date")
+
+    #                 past_notification = Notification.objects.filter(
+    #                     Q(start_date__lt=today_start),
+    #                     Q(expire_date__lt=today_start),
+    #                     is_event=True,
+    #                 ).order_by("-expire_date")
+
+    #                 pending_notification = Notification.objects.filter(
+    #                     start_date__gte=today_end,
+    #                     is_event=True,
+    #                 )
+
+    #         present_data = NotificationNewGetSerializer(present_notification, many=True)
+    #         past_data = NotificationNewGetSerializer(past_notification, many=True)
+    #         pending_data = NotificationNewGetSerializer(pending_notification, many=True)
+
+    #         # ── Birthday data ─────────────────────────────────────────────
+    #         birthday_context = {"request": request}
+    #         try:
+    #             base_qs = get_person_queryset(request)
+    #             scoped_qs = get_birthday_queryset(person, base_qs)
+    #             today_bdays, upcoming_bdays = split_birthdays(scoped_qs, login_person=person)
+    #             birthday_data = {
+    #                 "today": BirthdayPersonSerializer(
+    #                     today_bdays, many=True, context=birthday_context
+    #                 ).data,
+    #                 "upcoming": BirthdayPersonSerializer(
+    #                     upcoming_bdays, many=True, context=birthday_context
+    #                 ).data,
+    #             }
+    #         except Exception:
+    #             birthday_data = {"today": [], "upcoming": []}
+    #         # ─────────────────────────────────────────────────────────────
+
+    #         return Response(
+    #             {
+    #                 "present_notification": present_data.data,
+    #                 "past_notification": past_data.data,
+    #                 "pending_notification": (
+    #                     pending_data.data
+    #                     if person.is_admin or person.is_super_admin
+    #                     else []
+    #                 ),
+    #                 # "birthday_data": birthday_data,
+    #                 "today_birthday": BirthdayPersonSerializer(
+    #                     today_bdays, many=True, context=birthday_context
+    #                 ).data,
+    #                 "upcoming_birthday": BirthdayPersonSerializer(
+    #                     upcoming_bdays, many=True, context=birthday_context
+    #                 ).data,
+    #             },
+    #             status=status.HTTP_200_OK,
+    #         )
+
+    #     return Response(
+    #         {"message": "Please Enter a Person Details"},
+    #         status=status.HTTP_400_BAD_REQUEST,
+    #     )
+    
     def get(self, request):
         target_date = datetime.now()
         person_id = request.GET.get("person_id")
-        is_event_show = request.GET.get("is_event_show","false").lower()
 
         today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -45,182 +275,230 @@ class NotificationDetailView(APIView):
                 )
 
             person_surename_ids = [person.surname.id]
-            if is_event_show == "false":
+            if (
+                person.flag_show == True
+                and person.is_admin == False
+                and person.is_super_admin == False
+            ):
+                present_notification = Notification.objects.filter(
+                    Q(start_date__lte=today_end),
+                    Q(expire_date__gte=today_start),
+                    to_person=person.id,
+                ).order_by("expire_date")
 
-                if (
-                    person.flag_show == True
-                    and person.is_admin == False
-                    and person.is_super_admin == False
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        to_person=person.id,
-                        is_event=False,
-                    ).order_by("expire_date")
+                past_notification = Notification.objects.filter(
+                    Q(start_date__lt=today_start),
+                    Q(expire_date__lt=today_start),
+                    to_person=person.id,
+                ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        to_person=person.id,
-                        is_event=False,
-                    ).order_by("-expire_date")
+                pending_notification = Notification.objects.filter(
+                    start_date__gte=today_end, is_event=False
+                )
+            elif (
+                person.flag_show == True
+                and person.is_admin == True
+                and person.is_super_admin == False
+            ):
+                present_notification = Notification.objects.filter(
+                    Q(start_date__lte=today_end),
+                    Q(expire_date__gte=today_start),
+                    (
+                        Q(filter__All=True)
+                        | Q(
+                            filter__surname__contains=[
+                                {"id": id} for id in person_surename_ids
+                            ]
+                        )
+                    ),
+                ).order_by("expire_date")
 
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end, is_event=False
-                    )
-                elif (
-                    person.flag_show == True
-                    and person.is_admin == True
-                    and person.is_super_admin == False
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        (
-                            Q(filter__All=True)
-                            | Q(
-                                filter__surname__contains=[
-                                    {"id": id} for id in person_surename_ids
-                                ]
-                            )
-                        ),
-                        is_event=False,
-                    ).order_by("expire_date")
+                past_notification = Notification.objects.filter(
+                    Q(start_date__lt=today_start),
+                    Q(expire_date__lt=today_start),
+                    (
+                        Q(filter__All=True)
+                        | Q(
+                            filter__surname__contains=[
+                                {"id": id} for id in person_surename_ids
+                            ]
+                        )
+                    ),
+                ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        (
-                            Q(filter__All=True)
-                            | Q(
-                                filter__surname__contains=[
-                                    {"id": id} for id in person_surename_ids
-                                ]
-                            )
-                        ),
-                        is_event=False,
-                    ).order_by("-expire_date")
+                pending_notification = Notification.objects.filter(
+                    start_date__gte=today_end, is_event=False
+                )
+            elif (
+                person.flag_show == True
+                and person.is_admin == False
+                and person.is_super_admin == True
+            ):
+                present_notification = Notification.objects.filter(
+                    Q(start_date__lte=today_end),
+                    Q(expire_date__gte=today_start),
+                ).order_by("expire_date")
 
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end, is_event=False
-                    )
-                elif (
-                    person.flag_show == True
-                    and person.is_admin == False
-                    and person.is_super_admin == True
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        is_event=False,
-                    ).order_by("expire_date")
+                past_notification = Notification.objects.filter(
+                    Q(start_date__lt=today_start),
+                    Q(expire_date__lt=today_start),
+                    is_event=False,
+                ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        is_event=False,
-                    ).order_by("-expire_date")
+                pending_notification = Notification.objects.filter(
+                    start_date__gte=today_end, is_event=False
+                )
+            # else:
+            #     if (
+            #         person.flag_show == True
+            #         and person.is_admin == False
+            #         and person.is_super_admin == False
+            #     ):
+            #         present_notification = Notification.objects.filter(
+            #             Q(start_date__lte=today_end),
+            #             Q(expire_date__gte=today_start),
+            #             to_person=person.id,
+            #             is_event=True,
+            #         ).order_by("expire_date")
 
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end, is_event=False
-                    )
-            else:
-                if (
-                    person.flag_show == True
-                    and person.is_admin == False
-                    and person.is_super_admin == False
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        to_person=person.id,
-                        is_event=True,
-                    ).order_by("expire_date")
+            #         past_notification = Notification.objects.filter(
+            #             Q(start_date__lt=today_start),
+            #             Q(expire_date__lt=today_start),
+            #             to_person=person.id,
+            #             is_event=True,
+            #         ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        to_person=person.id,
-                        is_event=True,
-                    ).order_by("-expire_date")
+            #         pending_notification = Notification.objects.filter(
+            #             start_date__gte=today_end,
+            #             is_event=True,
+            #         )
+            #     elif (
+            #         person.flag_show == True
+            #         and person.is_admin == True
+            #         and person.is_super_admin == False
+            #     ):
+            #         present_notification = Notification.objects.filter(
+            #             Q(start_date__lte=today_end),
+            #             Q(expire_date__gte=today_start),
+            #             (
+            #                 Q(filter__All=True)
+            #                 | Q(
+            #                     filter__surname__contains=[
+            #                         {"id": id} for id in person_surename_ids
+            #                     ]
+            #                 )
+            #             ),
+            #             is_event=True,
+            #         ).order_by("expire_date")
 
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end,
-                        is_event=True,
-                    )
-                elif (
-                    person.flag_show == True
-                    and person.is_admin == True
-                    and person.is_super_admin == False
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        (
-                            Q(filter__All=True)
-                            | Q(
-                                filter__surname__contains=[
-                                    {"id": id} for id in person_surename_ids
-                                ]
-                            )
-                        ),
-                        is_event=True,
-                    ).order_by("expire_date")
+            #         past_notification = Notification.objects.filter(
+            #             Q(start_date__lt=today_start),
+            #             Q(expire_date__lt=today_start),
+            #             (
+            #                 Q(filter__All=True)
+            #                 | Q(
+            #                     filter__surname__contains=[
+            #                         {"id": id} for id in person_surename_ids
+            #                     ]
+            #                 )
+            #             ),
+            #             is_event=True,
+            #         ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        (
-                            Q(filter__All=True)
-                            | Q(
-                                filter__surname__contains=[
-                                    {"id": id} for id in person_surename_ids
-                                ]
-                            )
-                        ),
-                        is_event=True,
-                    ).order_by("-expire_date")
+            #         pending_notification = Notification.objects.filter(
+            #             start_date__gte=today_end,
+            #             is_event=True,
+            #         )
+            #     elif (
+            #         person.flag_show == True
+            #         and person.is_admin == False
+            #         and person.is_super_admin == True
+            #     ):
+            #         present_notification = Notification.objects.filter(
+            #             Q(start_date__lte=today_end),
+            #             Q(expire_date__gte=today_start),
+            #             is_event=True,
+            #         ).order_by("expire_date")
 
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end,
-                        is_event=True,
-                    )
-                elif (
-                    person.flag_show == True
-                    and person.is_admin == False
-                    and person.is_super_admin == True
-                ):
-                    present_notification = Notification.objects.filter(
-                        Q(start_date__lte=today_end),
-                        Q(expire_date__gte=today_start),
-                        is_event=True,
-                    ).order_by("expire_date")
+            #         past_notification = Notification.objects.filter(
+            #             Q(start_date__lt=today_start),
+            #             Q(expire_date__lt=today_start),
+            #             is_event=True,
+            #         ).order_by("-expire_date")
 
-                    past_notification = Notification.objects.filter(
-                        Q(start_date__lt=today_start),
-                        Q(expire_date__lt=today_start),
-                        is_event=True,
-                    ).order_by("-expire_date")
-
-                    pending_notification = Notification.objects.filter(
-                        start_date__gte=today_end,
-                        is_event=True,
-                    )
+            #         pending_notification = Notification.objects.filter(
+            #             start_date__gte=today_end,
+            #             is_event=True,
+            #         )
 
             present_data = NotificationNewGetSerializer(present_notification, many=True)
             past_data = NotificationNewGetSerializer(past_notification, many=True)
             pending_data = NotificationNewGetSerializer(pending_notification, many=True)
 
+            # ── Birthday data ─────────────────────────────────────────────
+            birthday_context = {"request": request}
+            try:
+                base_qs = get_person_queryset(request)
+                scoped_qs = get_birthday_queryset(person, base_qs)
+                today_bdays, upcoming_bdays = split_birthdays(scoped_qs, login_person=person)
+            except Exception:
+                today_bdays, upcoming_bdays = [], []
+
+            # ── Facebook-style birthday card  ─────────────────────────────
+            # "Amit Patel and 3 others have their birthday today."
+            birthday_notification = None
+            if today_bdays:
+                first = today_bdays[0]
+                others_count = len(today_bdays) - 1
+                first_name = first.first_name or ""
+                last_name  = first.surname.name if first.surname else ""
+                full_name  = f"{first_name} {last_name}".strip()
+
+                if others_count > 0:
+                    message = (
+                        f"{full_name} and {others_count} "
+                        f"{'other' if others_count == 1 else 'others'} "
+                        f"have their birthday today. Help them celebrate."
+                    )
+                else:
+                    message = f"{full_name} has their birthday today. Help them celebrate."
+
+                # Profile pic for the card (first person)
+                card_profile = ""
+                if first.thumb_profile:
+                    try:
+                        card_profile = first.thumb_profile.url
+                    except Exception:
+                        pass
+
+                birthday_notification = {
+                    "profile": card_profile,
+                    "first_person_name": full_name,
+                    "others_count": others_count,
+                    "total_count": len(today_bdays),
+                    "message": message,
+                }
+            # ── Merge birthday card as first item in present_notification ──
+            present_list = list(present_data.data)
+            if birthday_notification:
+                present_list.insert(0, birthday_notification)
+            # ─────────────────────────────────────────────────────────────
+
             return Response(
                 {
-                    "present_notification": present_data.data,
+                    "present_notification": present_list,
                     "past_notification": past_data.data,
                     "pending_notification": (
                         pending_data.data
                         if person.is_admin or person.is_super_admin
                         else []
                     ),
+                    "today_birthday": BirthdayPersonSerializer(
+                        today_bdays, many=True, context=birthday_context
+                    ).data,
+                    "upcoming_birthday": BirthdayPersonSerializer(
+                        upcoming_bdays, many=True, context=birthday_context
+                    ).data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -687,7 +965,7 @@ class PendingNotificationSend(APIView):
                 image_url = notification_image
                 sender = "Notification"
 
-                notification_created.delay(
+                task_args = (
                     sender,
                     i.title,
                     i.sub_title,
@@ -696,6 +974,11 @@ class PendingNotificationSend(APIView):
                     player_ids_android,
                     player_ids_ios,
                 )
+                try:
+                    notification_created.delay(*task_args)
+                except Exception:
+                    # Redis unavailable — run synchronously (local dev / no broker)
+                    notification_created(*task_args)
 
             # Log end time
             now = datetime.now()
@@ -714,3 +997,238 @@ class PendingNotificationSend(APIView):
                 {"message": f"Error Sending Pending Notification: {e}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+# ---------------------------------------------------------------------------
+# Birthday API
+# ---------------------------------------------------------------------------
+
+class BirthdayAPIView(APIView):
+    """
+    GET /api/v4/birthdays?person_id=<id>&lang=<en|guj>
+
+    Returns today's and upcoming (next-7-day) birthdays scoped to the
+    requesting person's role:
+        - Normal member  → same samaj
+        - Admin          → same samaj + same surname
+        - Super Admin    → entire village (all samaj)
+
+    Query Params:
+        person_id (int, required): ID of the requesting person.
+        lang      (str, optional): "en" (default) or "guj"
+                                   — reserved for future use.
+
+    Response:
+        {
+            "today_birthdays":    [ ...BirthdayPersonSerializer... ],
+            "upcoming_birthdays": [ ...BirthdayPersonSerializer... ]
+        }
+    """
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        from parivar.utils import get_person_queryset
+        from notifications.helpers import get_birthday_queryset, split_birthdays
+        from notifications.serializers import BirthdayPersonSerializer
+
+        person_id = request.GET.get("person_id")
+        if not person_id:
+            return Response(
+                {"message": "person_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Fetch requesting person (respects demo-mode via get_person_queryset)
+        try:
+            person = get_person_queryset(request).select_related(
+                "surname", "samaj", "samaj__village"
+            ).get(pk=person_id)
+        except Person.DoesNotExist:
+            return Response(
+                {"message": "Person not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not person.flag_show:
+            return Response(
+                {"message": "Person is not approved yet"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Base queryset (already demo / deleted filtered)
+        base_qs = get_person_queryset(request)
+
+        # Apply role-based scoping
+        scoped_qs = get_birthday_queryset(person, base_qs)
+
+        # Split into today & upcoming (surname-priority sort applied)
+        today_list, upcoming_list = split_birthdays(scoped_qs, login_person=person)
+
+        return Response(
+            {
+                "today_birthdays": BirthdayPersonSerializer(
+                    today_list, many=True, context={"request": request}
+                ).data,
+                "upcoming_birthdays": BirthdayPersonSerializer(
+                    upcoming_list, many=True, context={"request": request}
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Birthday Cron Send API  
+# ---------------------------------------------------------------------------
+
+class BirthdaySendView(APIView):
+    """
+    GET /api/v4/send-birthday-notifications
+
+    Finds every person whose birthday (MM-DD portion of date_of_birth)
+    matches TODAY's date, then sends an individual push notification to
+    all members of that person's samaj via the existing OneSignal /
+    Celery pipeline.
+
+    Designed to be called once daily at 12:00 AM by a system cron:
+
+        0 0 * * * curl -s http://localhost:8000/api/v4/send-birthday-notifications \
+                       >> /var/log/birthday_cron.log 2>&1
+
+    No authentication required (called by server-side cron).
+    """
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        from datetime import date as _date
+
+        today_md = _date.today().strftime("%m-%d")  # e.g. "02-24"
+
+        log_file = "birthday_cron.log"
+        now = datetime.now()
+        append_to_log(log_file, f"\n[{now}] Birthday cron started — matching MM-DD = {today_md}")
+
+        # ── 1. Find today's birthday persons (real data only, not demo) ──
+        all_persons = (
+            Person.objects.filter(is_deleted=False, is_demo=False, flag_show=True)
+            .select_related("surname", "samaj")
+            .only(
+                "id", "first_name", "middle_name", "date_of_birth",
+                "surname", "samaj",
+            )
+        )
+
+        birthday_persons = [
+            p for p in all_persons
+            if (p.date_of_birth or "").strip()[5:10] == today_md
+        ]
+
+        append_to_log(
+            log_file,
+            f"[{now}] Found {len(birthday_persons)} birthday person(s) today.",
+        )
+
+        if not birthday_persons:
+            return Response(
+                {
+                    "message": "No birthdays today.",
+                    "birthday_persons_found": 0,
+                    "notifications_sent": 0,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # ── 2. For each birthday person, notify their samaj members ──────
+        notifications_sent = 0
+
+        for bday_person in birthday_persons:
+            if not bday_person.samaj_id:
+                append_to_log(
+                    log_file,
+                    f"  Skipped person id={bday_person.id} — no samaj assigned.",
+                )
+                continue
+
+            # Build notification title & body
+            surname_name = bday_person.surname.name if bday_person.surname else ""
+            title = "🎂 Today's Birthday!"
+            body = (
+                f"Wish {bday_person.first_name} {bday_person.middle_name or ''} "
+                f"{surname_name} a very Happy Birthday! 🎉"
+            ).strip()
+
+            # Collect samaj members' player IDs (exclude the birthday person)
+            android_ids = list(
+                PersonPlayerId.objects.filter(
+                    person__samaj_id=bday_person.samaj_id,
+                    person__is_deleted=False,
+                    person__flag_show=True,
+                    platform="Android",
+                )
+                .exclude(person_id=bday_person.pk)
+                .values_list("player_id", flat=True)
+            )
+
+            ios_ids = list(
+                PersonPlayerId.objects.filter(
+                    person__samaj_id=bday_person.samaj_id,
+                    person__is_deleted=False,
+                    person__flag_show=True,
+                    platform="Ios",
+                )
+                .exclude(person_id=bday_person.pk)
+                .values_list("player_id", flat=True)
+            )
+
+            if not android_ids and not ios_ids:
+                append_to_log(
+                    log_file,
+                    f"  Skipped person id={bday_person.pk} — no registered devices in samaj.",
+                )
+                continue
+
+            # Dispatch via existing Celery task.
+            # Falls back to synchronous execution when Redis/Celery is not
+            # running (e.g. local dev), so the endpoint never 500s.
+            task_args = (
+                "BirthdayNotification",  # sender
+                title,
+                body,
+                None,                    # no image
+                "false",                 # is_all_segment = false (targeted)
+                android_ids,
+                ios_ids,
+            )
+            try:
+                notification_created.delay(*task_args)
+            except Exception:
+                # Redis unavailable — run synchronously (local dev / no broker)
+                notification_created(*task_args)
+
+            notifications_sent += 1
+            append_to_log(
+                log_file,
+                f"  Sent for person id={bday_person.pk} "
+                f"({len(android_ids)} Android, {len(ios_ids)} iOS devices).",
+            )
+
+        # ── 3. Summary log & response ─────────────────────────────────────
+        end_time = datetime.now()
+        append_to_log(
+            log_file,
+            f"[{end_time}] Birthday cron done — "
+            f"{notifications_sent}/{len(birthday_persons)} notifications dispatched.\n",
+        )
+
+        return Response(
+            {
+                "message": f"Birthday notifications dispatched for {notifications_sent} person(s).",
+                "birthday_persons_found": len(birthday_persons),
+                "notifications_sent": notifications_sent,
+            },
+            status=status.HTTP_200_OK,
+        )
