@@ -340,7 +340,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
             for num in mobile_numbers:
                 if not re.match(r"^\d{7,14}$", num):
                     raise serializers.ValidationError({
-                        "message": "Mobile number must be 7–14 digits only."
+                        "message": "Mobile number must be 7-14 digits only."
                     })
 
             # same number check
@@ -400,19 +400,24 @@ class PersonV4Serializer(serializers.ModelSerializer):
         data = super().to_representation(source_instance)
         
         # Profile URLs
-        if hasattr(source_instance, 'profile') and source_instance.profile:
-            data["profile"] = source_instance.profile.url
-        elif hasattr(source_instance, 'profile_pic') and source_instance.profile_pic:
-            data["profile"] = source_instance.profile_pic.url
-        else:
-            data["profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+        profile_img = getattr(source_instance, 'profile', None) or getattr(source_instance, 'profile_pic', None)
+        thumb_img   = getattr(source_instance, 'thumb_profile', None) or getattr(source_instance, 'profile_pic', None)
 
-        if hasattr(source_instance, 'thumb_profile') and source_instance.thumb_profile:
-            data["thumb_profile"] = source_instance.thumb_profile.url
-        elif hasattr(source_instance, 'profile_pic') and source_instance.profile_pic:
-            data["thumb_profile"] = source_instance.profile_pic.url
+        if profile_img:
+            try:
+                data["profile"] = profile_img.url
+            except Exception:
+                data["profile"] = os.getenv("DEFAULT_PROFILE_PATH", "")
         else:
-            data["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH")
+            data["profile"] = os.getenv("DEFAULT_PROFILE_PATH", "")
+
+        if thumb_img:
+            try:
+                data["thumb_profile"] = thumb_img.url
+            except Exception:
+                data["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH", "")
+        else:
+            data["thumb_profile"] = os.getenv("DEFAULT_PROFILE_PATH", "")
 
         if lang == "guj":
             if is_demo:
@@ -919,15 +924,19 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
 
     def get_profile(self, obj):
         if obj.profile:
-            return obj.profile.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_thumb_profile(self, obj):
         if obj.thumb_profile and obj.thumb_profile != "":
-            return obj.thumb_profile.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.thumb_profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_guj_first_name(self, obj):
         translate_data = TranslatePerson.objects.filter(
@@ -1050,13 +1059,19 @@ class CountryWiseMemberSerializer(serializers.ModelSerializer):
 
     def get_profile(self, obj):
         if obj.profile and obj.profile.name:
-            return f"/media/{obj.profile.name}"
-        return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_thumb_profile(self, obj):
         if obj.thumb_profile and obj.thumb_profile.name:
-            return f"/media/{obj.thumb_profile.name}"
-        return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.thumb_profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_trans_first_name(self, obj):
         if hasattr(obj, 'trans_fname'):
@@ -1227,20 +1242,22 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
         return ""
 
     def get_profile(self, obj):
-        if hasattr(obj, 'profile') and obj.profile:
-            return obj.profile.url
-        elif hasattr(obj, 'profile_pic') and obj.profile_pic:
-            return obj.profile_pic.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+        image = getattr(obj, 'profile', None) or getattr(obj, 'profile_pic', None)
+        if image:
+            try:
+                return image.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_thumb_profile(self, obj):
-        if hasattr(obj, 'thumb_profile') and obj.thumb_profile and obj.thumb_profile != "":
-            return obj.thumb_profile.url
-        elif hasattr(obj, 'profile_pic') and obj.profile_pic:
-            return obj.profile_pic.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+        image = getattr(obj, 'thumb_profile', None) or getattr(obj, 'profile_pic', None)
+        if image:
+            try:
+                return image.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
         
     def get_samaj(self, obj):
         lang = self.context.get("lang", "en")
@@ -1500,15 +1517,19 @@ class PersonGetSerializer(serializers.ModelSerializer):
 
     def get_profile(self, obj):
         if obj.profile:
-            return obj.profile.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_thumb_profile(self, obj):
         if obj.thumb_profile and obj.thumb_profile != "":
-            return obj.thumb_profile.url
-        else:
-            return os.getenv("DEFAULT_PROFILE_PATH")
+            try:
+                return obj.thumb_profile.url
+            except Exception:
+                pass
+        return os.getenv("DEFAULT_PROFILE_PATH", "")
 
     def get_state(self, obj):
         if obj.state is not None:
