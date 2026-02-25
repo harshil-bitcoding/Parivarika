@@ -268,6 +268,8 @@ class CSVImportService:
                 'int_mobile': ['International Mobile', 'International'],
                 'profile': ['Profile', 'Profile Pic', 'Image'],
                 'thumb_profile': ['Thumb profile', 'Thumb', 'Thumbnail'],
+                'link_father': ['Name of Father'],
+                'link_son': ['Name of Son'],
             }
 
             # Smart Header Detection
@@ -302,7 +304,7 @@ class CSVImportService:
                         
                         # 2. Other Fields
                         for key, keys in keywords.items():
-                            if key in ['gender', 'mobile1', 'mobile2', 'dob', 'country', 'int_mobile', 'surname', 'profile', 'thumb_profile']:
+                            if key in ['gender', 'mobile1', 'mobile2', 'dob', 'country', 'int_mobile', 'surname', 'profile', 'thumb_profile', 'link_father', 'link_son']:
                                 if any(k.lower() in combined_col_str for k in keys):
                                     if key == 'mobile1':
                                         if "main" in combined_col_str: col_map['mobile1'] = j
@@ -341,6 +343,7 @@ class CSVImportService:
                     int_mob = cls.clean_val(row[col_map['int_mobile']]) if 'int_mobile' in col_map else ""
                     profile_path = cls.clean_val(row[col_map['profile']]) if 'profile' in col_map else ""
                     thumb_profile_path = cls.clean_val(row[col_map['thumb_profile']]) if 'thumb_profile' in col_map else ""
+                    link_father_name = cls.clean_val(row[col_map['link_father']]) if 'link_father' in col_map and col_map['link_father'] < len(row) else ""
                     
                     # 1. Empty Row Check: Skip silently if the row has absolutely no data
                     # This avoids false "Surname Mismatch" bugs for blank rows.
@@ -425,69 +428,78 @@ class CSVImportService:
 
                     if created: total_created += 1
                     else: total_updated += 1
+
+                    # Store the link for relation-building phase
+                    if link_father_name:
+                        if not hasattr(cls, '_link_map'):
+                            cls._link_map = {}
+                        cls._link_map[person.id] = link_father_name.strip()
+
                 except Exception as e:
                     bug_rows.append(list(row) + [str(e)])
 
-        # 4. Process Relations (Name-based)
-        # Optimization: Use in-memory lookup to avoid N+1 queries
+        # 4. Process Relations using 'Name of Father' link column
+        # Priority: use link_map (full name match) if available, else fallback to middle_name match
         system_admin = Person.objects.filter(is_super_admin=True, is_demo=is_demo, is_deleted=False).first()
         if not system_admin:
             system_admin = Person.objects.filter(is_admin=True, is_demo=is_demo, is_deleted=False).first()
-        
-        # Fallback: If no admin found, use the first available person to ensure relations are still created
         if not system_admin:
             system_admin = Person.objects.filter(is_demo=is_demo, is_deleted=False).first()
-        
-        if system_admin:
-            # check all persons for potential father matches within the same silo
-            person_query = Person.objects.filter(is_demo=is_demo, is_deleted=False)
-            
-            all_persons = list(person_query.select_related('surname'))
-            
-            # Map for fast lookup: {(first_name_lower, surname_id, samaj_id): person}
-            # This ensures fathers are matched only within the same samaj
-            person_map = {}
-            for p in all_persons:
-                if p.first_name and p.surname_id:
-                    key = (p.first_name.strip().lower(), p.surname_id, p.samaj_id)
-                    # Simple handling for duplicates: prefer those with mobile numbers or older entries
-                    if key not in person_map or (p.mobile_number1 and not person_map[key].mobile_number1):
-                        person_map[key] = p
 
+        if system_admin:
+            person_query = Person.objects.filter(is_demo=is_demo, is_deleted=False)
+            all_persons = list(person_query.select_related('surname'))
+
+            # Build full-name lookup: "firstname middlename" → person
+            # Key: (full_name_lower, samaj_id)
+            fullname_map = {}
+            for p in all_persons:
+                if p.first_name and p.middle_name:
+                    full = f"{p.first_name.strip()} {p.middle_name.strip()}".lower()
+                    key = (full, p.samaj_id)
+                    if key not in fullname_map or (p.mobile_number1 and not fullname_map[key].mobile_number1):
+                        fullname_map[key] = p
+
+
+            link_map = getattr(cls, '_link_map', {})
             relations_to_create = []
-            # Track created relations in memory to avoid duplicates in this batch
             created_relation_pairs = set()
-            
+
             for child in all_persons:
-                father_name = str(child.middle_name).strip().lower() if child.middle_name else ""
-                if father_name and child.surname_id and child.samaj_id:
-                    # Look up father in the same samaj
-                    father = person_map.get((father_name, child.surname_id, child.samaj_id))
-                    if father and father.id != child.id:
-                        # Create unique key for this relation
-                        relation_key = (father.id, child.id)
-                        
-                        # Skip if we already created this relation in this batch
-                        if relation_key not in created_relation_pairs:
-                            # Check if relation already exists in database
-                            if not ParentChildRelation.objects.filter(
-                                parent_id=father.id, 
-                                child_id=child.id,
-                                is_demo=is_demo
-                            ).exists():
-                                relations_to_create.append(
-                                    ParentChildRelation(
-                                        parent=father,
-                                        child=child,
-                                        is_demo=is_demo,
-                                        created_user=system_admin
-                                    )
+                father = None
+
+                # Match only via 'Name of Father' link column (full name)
+                # If no link provided, no relation is created
+                link_father_name = link_map.get(child.id, "")
+                if not link_father_name or not child.samaj_id:
+                    continue
+                lookup_key = (link_father_name.strip().lower(), child.samaj_id)
+                father = fullname_map.get(lookup_key)
+
+                if father and father.id != child.id:
+                    relation_key = (father.id, child.id)
+                    if relation_key not in created_relation_pairs:
+                        if not ParentChildRelation.objects.filter(
+                            parent_id=father.id,
+                            child_id=child.id,
+                            is_demo=is_demo
+                        ).exists():
+                            relations_to_create.append(
+                                ParentChildRelation(
+                                    parent=father,
+                                    child=child,
+                                    is_demo=is_demo,
+                                    created_user=system_admin
                                 )
-                                created_relation_pairs.add(relation_key)
-            
-            # Bulk create only non-duplicate relations
+                            )
+                            created_relation_pairs.add(relation_key)
+
             if relations_to_create:
                 ParentChildRelation.objects.bulk_create(relations_to_create, ignore_conflicts=True)
+
+            # Cleanup class-level link map after processing
+            if hasattr(cls, '_link_map'):
+                del cls._link_map
 
 
         # 5. Generate Bug CSV if needed

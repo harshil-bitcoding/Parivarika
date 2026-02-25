@@ -369,14 +369,19 @@ class PersonV4Serializer(serializers.ModelSerializer):
         # ---------- DATE VALIDATION ----------
         date_of_birth_str = data.get("date_of_birth")
         if date_of_birth_str:
-            try:
-                datetime.strptime(date_of_birth_str, "%Y-%m-%d %H:%M:%S.%f")
-            except ValueError:
+            parsed_date = None
+            for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    parsed_date = datetime.strptime(date_of_birth_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            if parsed_date is None:
                 raise serializers.ValidationError({
-                    "message": "Invalid date format. Expected YYYY-MM-DD HH:MM:SS.SSS"
+                    "message": "Invalid date format. Expected YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
                 })
-
-        return data
+            # Normalize: always store as 'YYYY-MM-DD 00:00:00'
+            data["date_of_birth"] = parsed_date.strftime("%Y-%m-%d 00:00:00")
 
     def to_representation(self, instance):
         is_demo = self.context.get("is_demo", False)
