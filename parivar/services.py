@@ -135,6 +135,8 @@ class CSVImportService:
         Core logic for processing CSV/XLSX files.
         Mirrored from DemoCSVUploadAPIView with added surname policy.
         """
+        # Always reset class-level link_map to avoid cross-request pollution
+        cls._link_map = {}
         # 1. Save original file
         fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'uploads', 'original'))
         filename = fs.save(uploaded_file.name, uploaded_file)
@@ -249,7 +251,8 @@ class CSVImportService:
             keywords = {
                 'first_name': ['Firstname (In English)', 'Firstname', 'First name', 'In English', 'In emglish', 'In rmglish'],
                 'guj_first_name': ['Firstname (In Gujarati)', 'In Gujarati', 'In Gujaratio', 'In Gujaration', 'In Gujaral', 'In Gujaralt', 'In Gujarai'],
-                'middle_name': ['Father name (In English)', 'Father name', 'Name of Father', 'In English', 'In emglish', 'In rmglish'],
+                # 'Name of Father' deliberately removed here — it belongs to link_father, not middle_name
+                'middle_name': ['Father name (In English)', 'Father name', 'In English', 'In emglish', 'In rmglish'],
                 'guj_middle_name': ['Father name (In Gujarati)', 'Father name Gujarati', 'In Gujarati', 'In Gujaratio', 'In Gujaration', 'In Gujaral', 'In Gujaralt', 'In Gujarai'],
                 'surname': ['Surname', 'Sirname'],
                 'mobile1': ['Mobile Number Main', 'Main', 'Mobile'],
@@ -288,7 +291,12 @@ class CSVImportService:
                             elif 'english' in combined_col_str or 'first_name' not in col_map:
                                 col_map['first_name'] = j
                         elif any(k in combined_col_str for k in ['father', 'middle', 'parent']):
-                            if any(k in combined_col_str for k in ['gujarati', 'gujrai', 'gujara', 'gujal', 'gujalt']):
+                            # Guard: if this column is the 'Name of Father' LINK column, skip it here
+                            # The secondary keywords loop below will correctly assign it to link_father
+                            is_link_father_col = 'name of father' in combined_col_str
+                            if is_link_father_col:
+                                pass  # handled in link_father keyword below
+                            elif any(k in combined_col_str for k in ['gujarati', 'gujrai', 'gujara', 'gujal', 'gujalt']):
                                 col_map['guj_middle_name'] = j
                             elif 'english' in combined_col_str or 'middle_name' not in col_map:
                                 col_map['middle_name'] = j
