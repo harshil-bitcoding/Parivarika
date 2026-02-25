@@ -1580,6 +1580,18 @@ class V4AdminPersons(APIView):
                 {"message": "Person Not Found"}, status=status.HTTP_404_NOT_FOUND
             )
 
+        # Cross-validate X-Mobile-Number header
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            if (
+                person.mobile_number1 != mobile_header
+                and person.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {"message": "Unauthorized: Mobile number does not match person"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         lang = request.GET.get("lang", "en")
         # ===== Permission Based Admin List =====
 
@@ -1653,6 +1665,31 @@ class V4AdminPersons(APIView):
                     {"message": "Surname ID is required", "data": []},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+        # Cross-validate X-Mobile-Number header — must belong to same samaj as surname's top member
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            try:
+                requester = Person.objects.filter(
+                    Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header),
+                    is_deleted=False
+                ).select_related("samaj").first()
+
+                top_member_id = Surname.objects.filter(id=int(surname)).values_list("top_member", flat=True).first()
+                if top_member_id:
+                    top_member_person = Person.objects.filter(id=top_member_id, is_deleted=False).select_related("samaj").first()
+                    if (
+                        not requester
+                        or not top_member_person
+                        or requester.samaj_id != top_member_person.samaj_id
+                    ):
+                        return Response(
+                            {"message": "Unauthorized: Mobile number does not belong to the same samaj"},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+            except Exception:
+                pass
+
         surname_data = Surname.objects.filter(Q(id=int(surname)))
         if surname_data.exists():
             surname_data = surname_data.first()
@@ -1702,6 +1739,18 @@ class V4AdminPersons(APIView):
             )
         try:
             person = Person.objects.get(id=admin_user_id, is_deleted=False)
+
+            # Cross-validate X-Mobile-Number header
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if mobile_header:
+                if (
+                    person.mobile_number1 != mobile_header
+                    and person.mobile_number2 != mobile_header
+                ):
+                    return Response(
+                        {"message": "Unauthorized: Mobile number does not match admin user"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
             if person:
                 person.password = password
                 person.save()
@@ -1721,14 +1770,25 @@ class V4AdminPersonDetailView(APIView):
     def get(self, request, pk, admin_user_id):
         admin_user_id = admin_user_id
         if not admin_user_id:
-            return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             admin_person = Person.objects.get(pk=admin_user_id)
         except Person.DoesNotExist:
-            # logger.error(f'Person with ID {admin_user_id} not found')
-            return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Cross-validate X-Mobile-Number header
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            if (
+                admin_person.mobile_number1 != mobile_header
+                and admin_person.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {'message': 'Unauthorized: Mobile number does not match admin user'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         try:
             person = Person.objects.get(id=pk)
             if person:
@@ -1763,10 +1823,21 @@ class V4AdminPersonDetailView(APIView):
         try:
             admin_person = Person.objects.get(pk=admin_user_id)
         except Person.DoesNotExist:
-            # logger.error(f'Person with ID {admin_user_id} not found')
             return Response({'message': 'Admin Person with that ID does not exist'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
-            return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
+            return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Cross-validate X-Mobile-Number header
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            if (
+                admin_person.mobile_number1 != mobile_header
+                and admin_person.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {'message': 'Unauthorized: Mobile number does not match admin user'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         surname = request.data.get('surname', 0)
         persons_surname_wise = Surname.objects.filter(Q(id=int(surname))).first()
         father = request.data.get('father', 0)        
@@ -1944,14 +2015,25 @@ class V4AdminPersonDetailView(APIView):
     def put(self, request):
         admin_user_id = request.data.get('admin_user_id')
         if not admin_user_id:
-            return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'message': 'Missing Admin User in request data'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             admin_person = Person.objects.get(pk=admin_user_id)
         except Person.DoesNotExist:
-            # logger.error(f'Person with ID {admin_user_id} not found')
-            return Response({'message': f'Admin Person not found'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
-            return Response({'message': 'User does not have admin access'}, status=status.HTTP_200_OK)
+            return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Cross-validate X-Mobile-Number header
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            if (
+                admin_person.mobile_number1 != mobile_header
+                and admin_person.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {'message': 'Unauthorized: Mobile number does not match admin user'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         
         user_id = request.data.get('id')
         if not user_id:
@@ -2146,6 +2228,18 @@ class V4PendingApproveDetailView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
+            # Cross-validate X-Mobile-Number header
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if mobile_header:
+                if (
+                    person.mobile_number1 != mobile_header
+                    and person.mobile_number2 != mobile_header
+                ):
+                    return Response(
+                        {"message": "Unauthorized: Mobile number does not match admin user"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             # Get surname based on admin user (assuming relationship exists)
             surname = (
                 person.surname
@@ -2187,7 +2281,7 @@ class V4PendingApproveDetailView(APIView):
                         {
                             "message": "No users with pending confirmation for this surname"
                         },
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        status=status.HTTP_200_OK,
                     )
                 child_users = pending_users.filter(child_flag=True).order_by(
                     "first_name"
@@ -2239,6 +2333,20 @@ class V4PendingApproveDetailView(APIView):
                     {"message": "User does not have admin access"},
                     status=status.HTTP_200_OK,
                 )
+
+            # Cross-validate X-Mobile-Number header
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if mobile_header:
+                if (
+                    admin_person.mobile_number1 != mobile_header
+                    and admin_person.mobile_number2 != mobile_header
+                ):
+                    return Response(
+                        {"message": "Unauthorized: Mobile number does not match admin user"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            # Cross-validate: ensure target user belongs to admin's surname (non-super admin)
             user_id = request.data.get("user_id")
             if not user_id:
                 return Response(
@@ -2252,6 +2360,11 @@ class V4PendingApproveDetailView(APIView):
                 return Response(
                     {"message": f"Person not found"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            if not admin_person.is_super_admin and person.surname != admin_person.surname:
+                return Response(
+                    {"message": "Unauthorized: User does not belong to your surname"},
+                    status=status.HTTP_403_FORBIDDEN,
                 )
             if person.flag_show:
                 return Response(
@@ -2277,19 +2390,19 @@ class V4PendingApproveDetailView(APIView):
                 if lang == "guj":
                     return Response(
                         {"message": "એડમીન સભ્ય ડેટામાં મળી રહીયો નથી"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        status=status.HTTP_404_NOT_FOUND,
                     )
                 else:
                     return Response(
                         {"message": "Missing Admin User in request data"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
             try:
                 admin_person = Person.objects.get(pk=admin_user_id, is_deleted=False)
             except Person.DoesNotExist:
                 return Response(
                     {"message": f"Admin Person not found"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status=status.HTTP_404_NOT_FOUND,
                 )
             if not (admin_person.is_admin or admin_person.is_super_admin):
                 if lang == "guj":
@@ -2302,18 +2415,30 @@ class V4PendingApproveDetailView(APIView):
                         {"message": "User does not have admin access"},
                         status=status.HTTP_200_OK,
                     )
+
+            # Cross-validate X-Mobile-Number header
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if mobile_header:
+                if (
+                    admin_person.mobile_number1 != mobile_header
+                    and admin_person.mobile_number2 != mobile_header
+                ):
+                    return Response(
+                        {"message": "Unauthorized: Mobile number does not match admin user"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
             user_id = request.data.get("user_id")
             if not user_id or user_id is None or user_id == "":
                 return Response(
                     {"message": "Missing User in request data"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status=status.HTTP_404_NOT_FOUND,
                 )
             try:
                 person = Person.objects.get(pk=user_id, is_deleted=False)
             except Person.DoesNotExist:
                 return Response(
                     {"message": f"Person not found"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status=status.HTTP_404_NOT_FOUND,
                 )
             try:
                 translate_person = TranslatePerson.objects.get(
@@ -2346,7 +2471,7 @@ class V4PendingApproveDetailView(APIView):
             except Surname.DoesNotExist:
                 return Response(
                     {"message": f"Surname not exist"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status=status.HTTP_404_NOT_FOUND,
                 )
             except Exception as exp:
                 return Response(
@@ -2361,12 +2486,12 @@ class V4PendingApproveDetailView(APIView):
         except Http404:
             return Response(
                 {"message": f"Person not found."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status=status.HTTP_404_NOT_FOUND,
             )
         except Exception as e:
             return Response(
-                {"message": f"Failed to delete the for this record"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {"message": f"Failed to delete the record"},
+                status=status.HTTP_404_NOT_FOUND,
             )
         
 class PersonBySurnameViewV4(APIView):
@@ -2543,15 +2668,44 @@ class CSVUploadAPIView(APIView):
 class V4BannerDetailView(APIView):
     def get(self, request):
         today = datetime.now().date()
+
+        # Auto-expire banners past their date
         Banner.objects.filter(
             expire_date__lt=today, is_active=True, is_deleted=False
         ).update(is_active=False)
-        active_banner = Banner.objects.filter(
+
+        # Cross-validate X-Mobile-Number header and filter by samaj
+        mobile_header = request.headers.get("X-Mobile-Number")
+        samaj_id = None
+
+        if mobile_header:
+            login_person = Person.objects.filter(
+                Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header),
+                is_deleted=False
+            ).select_related("samaj").first()
+
+            if not login_person:
+                return Response(
+                    {"message": "Person not found for provided mobile number"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            samaj_id = login_person.samaj_id
+
+        # Base banner querysets
+        active_qs = Banner.objects.filter(
             is_active=True, expire_date__gte=today, is_deleted=False
-        ).order_by("expire_date")
-        expire_banner = Banner.objects.filter(
+        )
+        expire_qs = Banner.objects.filter(
             is_active=False, expire_date__lt=today, is_deleted=False
-        ).order_by("-expire_date")
+        )
+
+        # Apply samaj filter if we resolved one from the mobile header
+        if samaj_id:
+            active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
+            expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
+
+        active_banner = active_qs.order_by("expire_date")
+        expire_banner = expire_qs.order_by("-expire_date")
 
         active_banner_data = BannerGETSerializer(active_banner, many=True).data
         expire_banner_data = BannerGETSerializer(expire_banner, many=True).data
@@ -2572,7 +2726,21 @@ class V4BannerDetailView(APIView):
         today = datetime.now().date()
         images = request.FILES.getlist("images")
         created_person = int(request.data.get("created_person"))
-        person = get_object_or_404(Person, id=created_person).id
+        person = get_object_or_404(Person, id=created_person)
+
+        # Cross-validate X-Mobile-Number header
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            if (
+                person.mobile_number1 != mobile_header
+                and person.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {"message": "Unauthorized: Mobile number does not match created_person"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        person = person.id
         expire_days = request.data.get("expire_days", 0)
         is_ad_lable = True
         if "is_ad_lable" in request.data:
@@ -2626,7 +2794,6 @@ class V4BannerDetailView(APIView):
             )
 
     def put(self, request):
-
         banner_id = request.data.get("banner_id")
         if not banner_id:
             return Response(
@@ -2635,6 +2802,32 @@ class V4BannerDetailView(APIView):
             )
 
         banner = get_object_or_404(Banner, id=banner_id)
+
+        # Validate created_person — must match the banner's original creator
+        created_person_id = request.data.get("created_person")
+        if not created_person_id:
+            return Response(
+                {"message": "created_person is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if int(created_person_id) != banner.created_person_id:
+            return Response(
+                {"message": "Unauthorized: created_person does not match banner creator"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Cross-validate X-Mobile-Number header — caller must be the banner creator
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            creator = banner.created_person
+            if (
+                creator.mobile_number1 != mobile_header
+                and creator.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {"message": "Unauthorized: Mobile number does not match banner creator"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         images = request.FILES.getlist("images")
         expire_days = request.data.get("expire_days", 0)
         redirect_url = request.data.get("redirect_url")
@@ -2686,6 +2879,19 @@ class V4BannerDetailView(APIView):
                 {"message": f"Failed to fetch Banner record: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        # Cross-validate X-Mobile-Number header — caller must be the banner creator
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if mobile_header:
+            creator = banner.created_person
+            if (
+                creator.mobile_number1 != mobile_header
+                and creator.mobile_number2 != mobile_header
+            ):
+                return Response(
+                    {"message": "Unauthorized: Mobile number does not match banner creator"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         
         try:
             if banner.is_deleted == False:
