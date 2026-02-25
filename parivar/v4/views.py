@@ -369,11 +369,29 @@ class GetSurnameBySamajView(APIView):
         samaj_id = request.GET.get("samaj_id")
         if not samaj_id:
             return Response({"error": "Samaj ID is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         lang = request.GET.get("lang", "en")
+
         surnames = Surname.objects.filter(samaj_id=samaj_id).order_by('name')
         serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Annotate total person count per surname
+        from django.db.models import Count, Q as DQ
+        surname_counts = {
+            item["surname_id"]: item["total"]
+            for item in Person.objects.filter(
+                surname__samaj_id=samaj_id,
+                is_deleted=False,
+                flag_show=True,
+            ).values("surname_id").annotate(total=Count("id"))
+        }
+
+        data = serializer.data
+        for item in data:
+            item["total_count"] = surname_counts.get(item["id"], 0)
+
+        return Response(data, status=status.HTTP_200_OK)
+
     
 class V4LoginAPI(APIView):
     authentication_classes = []
