@@ -463,12 +463,12 @@ class CSVImportService:
             all_persons = list(person_query.select_related('surname'))
 
             # Build full-name lookup: "firstname middlename" → person
-            # Key: (full_name_lower, samaj_id)
+            # Key: (full_name_lower, samaj_id, surname_id) — surname_id prevents cross-surname false matches
             fullname_map = {}
             for p in all_persons:
                 if p.first_name and p.middle_name:
                     full = f"{p.first_name.strip()} {p.middle_name.strip()}".lower()
-                    key = (full, p.samaj_id)
+                    key = (full, p.samaj_id, p.surname_id)
                     if key not in fullname_map or (p.mobile_number1 and not fullname_map[key].mobile_number1):
                         fullname_map[key] = p
 
@@ -485,8 +485,18 @@ class CSVImportService:
                 link_father_name = link_map.get(child.id, "")
                 if not link_father_name or not child.samaj_id:
                     continue
-                lookup_key = (link_father_name.strip().lower(), child.samaj_id)
+                lookup_key = (link_father_name.strip().lower(), child.samaj_id, child.surname_id)
                 father = fullname_map.get(lookup_key)
+
+                # Fallback: if not found with surname match, try without surname constraint
+                # (handles rare cross-surname family links)
+                if not father:
+                    fallback_key = (link_father_name.strip().lower(), child.samaj_id, None)
+                    # Search all entries for samaj+name match ignoring surname
+                    for k, v in fullname_map.items():
+                        if k[0] == link_father_name.strip().lower() and k[1] == child.samaj_id:
+                            father = v
+                            break
 
                 if father and father.id != child.id:
                     relation_key = (father.id, child.id)
