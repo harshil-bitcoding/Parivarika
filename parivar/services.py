@@ -46,15 +46,6 @@ class LocationResolverService:
         if not village:
             return None, f"Failed to create Village: '{village_name}'"
         
-        # 4. Resolve/Create "Patel" Samaj for this Village
-        samaj, samaj_created = Samaj.objects.get_or_create(
-            name__iexact="Patel",
-            village=village,
-            defaults={'name': "Patel", 'village': village}
-        )
-        if not samaj:
-            return None, f"Failed to create Samaj 'Patel' for village '{village_name}'"
-        
         status = "created" if created else "linked"
         return village, status
 
