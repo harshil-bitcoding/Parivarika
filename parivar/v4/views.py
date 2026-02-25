@@ -896,7 +896,7 @@ class V4ParentChildRelationDetailView(APIView):
             relation_data = (
                 get_relation_queryset(request).filter(
                     Q(parent__surname__id=surnameid)
-                    and Q(child__surname__id=surnameid),
+                    & Q(child__surname__id=surnameid),
                 )
                 .select_related("parent", "child")
                 .order_by("parent__date_of_birth", "child__date_of_birth")
