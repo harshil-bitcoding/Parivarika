@@ -350,23 +350,36 @@ class CSVImportService:
                     # 3. Proceed with record creation/update (Partial data is allowed if identifying info exists)
                     surname_obj = sheet_surname_obj
 
-                    # DOB Normalization
+                    # DOB Normalization — always output YYYY-MM-DD 00:00:00
                     dob = str(dob_raw).strip() if dob_raw else ""
                     if dob:
-                        # Extract time if present
-                        time_part = ""
+                        # Strip off any time component — we always force 00:00:00
                         if ' ' in dob:
-                            date_part, time_part = dob.split(' ', 1)
-                            dob = date_part
-                        
-                        # If no time was provided, use default midnight
-                        if not time_part:
-                            time_part = "00:00:00.000"
-                        
-                        if '-' in dob:
-                            parts = dob.split('-')
-                            if len(parts) == 3 and len(parts[0]) == 4: # YYYY-MM-DD
-                                dob = f"{parts[0]}-{parts[1]}-{parts[2]} {time_part}"
+                            dob = dob.split(' ', 1)[0]
+
+                        # Replace / with -
+                        dob = dob.replace('/', '-')
+
+                        parts = dob.split('-')
+                        if len(parts) == 3:
+                            a, b, c = parts[0].strip(), parts[1].strip(), parts[2].strip()
+                            # Determine order: YYYY-MM-DD vs DD-MM-YYYY
+                            if len(a) == 4:          # YYYY-MM-DD
+                                year, month, day = a, b, c
+                            elif len(c) == 4:        # DD-MM-YYYY or MM-DD-YYYY
+                                year, month, day = c, b, a
+                            else:
+                                # Ambiguous short year — skip
+                                dob = ""
+                                year, month, day = None, None, None
+
+                            if year:
+                                # Zero-pad month and day
+                                month = month.zfill(2)
+                                day = day.zfill(2)
+                                dob = f"{year}-{month}-{day} 00:00:00"
+                        else:
+                            dob = ""  # Unrecognized format — clear it
 
                     # Country Handling
                     c_name = country_name if country_name else "India"
