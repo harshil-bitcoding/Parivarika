@@ -388,7 +388,7 @@ class GetSurnameBySamajView(APIView):
 
         data = serializer.data
         for item in data:
-            item["total_count"] = surname_counts.get(item["id"], 0)
+            item["total_count"] = str(surname_counts.get(item["id"], 0))
 
         return Response(data, status=status.HTTP_200_OK)
 
