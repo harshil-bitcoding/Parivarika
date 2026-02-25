@@ -383,6 +383,8 @@ class PersonV4Serializer(serializers.ModelSerializer):
             # Normalize: always store as 'YYYY-MM-DD 00:00:00'
             data["date_of_birth"] = parsed_date.strftime("%Y-%m-%d 00:00:00")
 
+        return data
+
     def to_representation(self, instance):
         is_demo = self.context.get("is_demo", False)
         lang = self.context.get("lang", "en")
