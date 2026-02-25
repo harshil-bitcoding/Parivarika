@@ -1106,23 +1106,23 @@ class V4PersonDetailView(APIView):
     authentication_classes = []
     def get(self, request, pk):
         try:
-            person = get_person_queryset(request).get(id=pk)
+            person = Person.objects.filter(is_deleted=False).get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
                 person = PersonGetV4Serializer(person, context={'lang': lang}).data
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
-                child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
+                child_data = get_relation_queryset(request).filter(parent=int(person["id"]))
                 if child_data.exists():
                     child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
-                parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
+                parent_data = get_relation_queryset(request).filter(child=int(person["id"])).first()
                 if parent_data:
                     parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
                     person['parent'] = parent_data.get("parent")
-                    brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
+                    brother_data = get_relation_queryset(request).filter(parent=int(parent_data.get("parent").get("id", 0)))
                     if brother_data.exists():
                         brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
                         for brother in brother_data:
