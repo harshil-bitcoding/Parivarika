@@ -479,6 +479,9 @@ class Banner(models.Model):
 
 class RandomBanner(models.Model):
     is_random_banner = models.BooleanField(default=False)
+    samaj = models.ForeignKey(
+        "Samaj", on_delete=models.CASCADE, null=True, blank=True, related_name="random_banners"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)

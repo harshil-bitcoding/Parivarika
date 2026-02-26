@@ -1255,6 +1255,11 @@ class V4PersonDetailView(APIView):
                     return JsonResponse({'message': 'Children already exist'}, status=400)
                 children_exist.filter(parent=top_member).delete()
             persons = serializer.save()
+            if surname:
+                persons.surname_id = surname
+            if samaj_id:
+                persons.samaj_id = samaj_id
+            persons.save()
             try:
                 if not first_name:
                     raise ValueError("first_name is required")
@@ -1380,6 +1385,11 @@ class V4PersonDetailView(APIView):
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=400)
             persons = serializer.save()
+            if surname:
+                persons.surname_id = surname
+            if samaj_id:
+                persons.samaj_id = samaj_id
+            persons.save()
  
             father_data = get_relation_queryset(request).filter(child=persons.id)
             data = {
@@ -2790,7 +2800,8 @@ class V4BannerDetailView(APIView):
 
         active_banner_data = BannerGETSerializer(active_banner, many=True).data
         expire_banner_data = BannerGETSerializer(expire_banner, many=True).data
-        is_random_banner = RandomBanner.objects.values_list(
+        is_random_banner_qs = RandomBanner.objects.filter(samaj_id=samaj_id) if samaj_id else RandomBanner.objects.filter(samaj__isnull=True)
+        is_random_banner = is_random_banner_qs.values_list(
             "is_random_banner", flat=True
         ).first()
 
@@ -3015,7 +3026,7 @@ class V4RandomBannerView(APIView):
             else:
                 is_random_banner = False
         try:
-            data = RandomBanner.objects.all().first()
+            data = RandomBanner.objects.filter(samaj_id=admin_person.samaj_id).first()
             if data:
                 data.is_random_banner = is_random_banner
                 data.save()
@@ -3023,7 +3034,7 @@ class V4RandomBannerView(APIView):
                     {"message": "data Successfully updated"}, status=status.HTTP_200_OK
                 )
             else:
-                RandomBanner.objects.create(is_random_banner=is_random_banner)
+                RandomBanner.objects.create(is_random_banner=is_random_banner, samaj_id=admin_person.samaj_id)
                 return Response(
                     {"message": "data Successfully created"},
                     status=status.HTTP_201_CREATED,
