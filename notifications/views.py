@@ -261,6 +261,7 @@ class NotificationDetailView(APIView):
     def get(self, request):
         target_date = datetime.now()
         person_id = request.GET.get("person_id")
+        mobile_header = request.headers.get("X-Mobile-Number")
 
         today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -273,6 +274,17 @@ class NotificationDetailView(APIView):
                 return Response(
                     {"message": "Person is Not Found"}, status=status.HTTP_404_NOT_FOUND
                 )
+
+            # Cross-validate X-Mobile-Number header if provided
+            if mobile_header:
+                if (
+                    person.mobile_number1 != mobile_header
+                    and person.mobile_number2 != mobile_header
+                ):
+                    return Response(
+                        {"message": "Unauthorized: Mobile number does not match this person"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
 
             person_surename_ids = [person.surname.id]
             if (
@@ -295,11 +307,11 @@ class NotificationDetailView(APIView):
                 pending_notification = Notification.objects.filter(
                     start_date__gte=today_end, is_event=False
                 )
-            elif (
-                person.flag_show == True
-                and person.is_admin == True
-                and person.is_super_admin == False
-            ):
+            elif person.flag_show == True and person.is_admin == True:
+                # Add toggle for admins to view entire platform or scope to their samaj
+                is_entire_platform = request.GET.get("is_entire_platform", "false").lower() == "true"
+                samaj_filter = Q(to_person__samaj_id=person.samaj_id) if person.samaj_id and not is_entire_platform else Q()
+                
                 present_notification = Notification.objects.filter(
                     Q(start_date__lte=today_end),
                     Q(expire_date__gte=today_start),
@@ -311,7 +323,8 @@ class NotificationDetailView(APIView):
                             ]
                         )
                     ),
-                ).order_by("expire_date")
+                    samaj_filter,
+                ).distinct().order_by("expire_date")
 
                 past_notification = Notification.objects.filter(
                     Q(start_date__lt=today_start),
@@ -324,30 +337,13 @@ class NotificationDetailView(APIView):
                             ]
                         )
                     ),
-                ).order_by("-expire_date")
+                    samaj_filter,
+                ).distinct().order_by("-expire_date")
 
                 pending_notification = Notification.objects.filter(
-                    start_date__gte=today_end, is_event=False
-                )
-            elif (
-                person.flag_show == True
-                and person.is_admin == False
-                and person.is_super_admin == True
-            ):
-                present_notification = Notification.objects.filter(
-                    Q(start_date__lte=today_end),
-                    Q(expire_date__gte=today_start),
-                ).order_by("expire_date")
-
-                past_notification = Notification.objects.filter(
-                    Q(start_date__lt=today_start),
-                    Q(expire_date__lt=today_start),
-                    is_event=False,
-                ).order_by("-expire_date")
-
-                pending_notification = Notification.objects.filter(
-                    start_date__gte=today_end, is_event=False
-                )
+                    samaj_filter,
+                    start_date__gte=today_end, is_event=False,
+                ).distinct()
             # else:
             #     if (
             #         person.flag_show == True
@@ -490,7 +486,7 @@ class NotificationDetailView(APIView):
                     "past_notification": past_data.data,
                     "pending_notification": (
                         pending_data.data
-                        if person.is_admin or person.is_super_admin
+                        if person.is_admin
                         else []
                     ),
                     "today_birthday": BirthdayPersonSerializer(
@@ -563,6 +559,11 @@ class NotificationDetailView(APIView):
                 {"message": "Title is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        is_entire_platform = request.data.get("is_entire_platform", "false").lower() == "true"
+        # Resolve the sending admin's samaj for scoping (admins can bypass this via is_entire_platform=true)
+        sender_person = Person.objects.filter(id=person_id, is_deleted=False).first()
+        sender_samaj = sender_person.samaj if sender_person and not is_entire_platform else None
+
         if include_player_ids and is_all_segment == "false":
 
             if isinstance(include_player_ids, str):
@@ -575,19 +576,22 @@ class NotificationDetailView(APIView):
                     )
 
             surnames = list(include_player_ids)
-            player_ids_android = list(
-                PersonPlayerId.objects.filter(
-                    person__surname_id__in=surnames,
-                    person__is_deleted=False,
-                    platform="Android",
-                ).values_list("player_id", flat=True)
+            android_qs = PersonPlayerId.objects.filter(
+                person__surname_id__in=surnames,
+                person__is_deleted=False,
+                platform="Android",
             )
+            ios_qs = PersonPlayerId.objects.filter(
+                person__surname_id__in=surnames, platform="Ios"
+            )
+            # Scope player IDs to sender's samaj
+            if sender_samaj:
+                android_qs = android_qs.filter(person__samaj=sender_samaj)
+                ios_qs = ios_qs.filter(person__samaj=sender_samaj)
 
-            player_ids_ios = list(
-                PersonPlayerId.objects.filter(
-                    person__surname_id__in=surnames, platform="Ios"
-                ).values_list("player_id", flat=True)
-            )
+            player_ids_android = list(android_qs.values_list("player_id", flat=True))
+            player_ids_ios = list(ios_qs.values_list("player_id", flat=True))
+
         if include_player_ids:
             if isinstance(include_player_ids, str):
                 try:
@@ -616,17 +620,21 @@ class NotificationDetailView(APIView):
             surname_top_member_list = Surname.objects.values_list(
                 "top_member", flat=True
             )
-            surname_list = Surname.objects.values_list("id", flat=True)
+            # Scope all-segment to sender's samaj if not super-admin
+            if sender_samaj:
+                surname_list = Surname.objects.filter(samaj=sender_samaj).values_list("id", flat=True)
+            else:
+                surname_list = Surname.objects.values_list("id", flat=True)
 
         surname_top_member_list = [int(x) for x in surname_top_member_list]
 
-        to_persons = (
-            Person.objects.filter(
-                surname__id__in=surname_list, is_deleted=False, flag_show=True
-            )
-            .exclude(id__in=surname_top_member_list)
-            .values_list("id", flat=True)
-        )
+        # Build to_persons scoped to sender's samaj
+        to_persons_qs = Person.objects.filter(
+            surname__id__in=surname_list, is_deleted=False, flag_show=True
+        ).exclude(id__in=surname_top_member_list)
+        if sender_samaj:
+            to_persons_qs = to_persons_qs.filter(samaj=sender_samaj)
+        to_persons = to_persons_qs.values_list("id", flat=True)
 
         filter_field = {
             "surname": ([] if is_all_segment != "false" else surname),
