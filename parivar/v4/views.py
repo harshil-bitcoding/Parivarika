@@ -193,7 +193,7 @@ def getadmincontact(flag_show=False, lang="en", surname=None):
             admin_data = []
 
         super_admin = Person.objects.filter(
-            flag_show=True, is_super_admin=True, is_deleted=False
+            flag_show=True, is_admin=True, is_deleted=False
         )
         admin_serializer1 = PersonGetSerializer(
             super_admin, context={"lang": lang}, many=True
@@ -479,7 +479,7 @@ class V4LoginAPI(APIView):
         else:
             final_admin_queryset = get_person_queryset(request).filter(
                 samaj__village=login_village,
-                is_super_admin=True,
+                is_admin=True,
                 flag_show=True
             ).exclude(id=person.id)
 
@@ -514,8 +514,8 @@ class V4LoginAPI(APIView):
             try:
                 person_obj = get_person_queryset(request).get(pk=admin_user_id)
                 print("Person object for pending data count:", type(person_obj))
-                if person_obj.is_admin or person_obj.is_super_admin:
-                    if person_obj.is_super_admin:
+                if person_obj.is_admin:
+                    if person_obj.is_admin:
                         pending_users = get_person_queryset(request).filter(
                             flag_show=False
                         )
@@ -1034,7 +1034,7 @@ class V4ParentChildRelationDetailView(APIView):
             return Response(
                 {"error": "Admin memeber not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        if not (created_user.is_admin or created_user.is_super_admin):
+        if not created_user.is_admin:
             return Response(
                 {"error": "Permission denied: Only admins can edit this relation"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1110,6 +1110,7 @@ class V4PersonDetailView(APIView):
             if person:
                 lang = request.GET.get('lang', 'en')
                 person = PersonGetV4Serializer(person, context={'lang': lang}).data
+                person['is_admin'] = person.get('is_admin', False) or person.get('is_super_admin', False) or person.get('is_super_uper', False)
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
@@ -1405,7 +1406,7 @@ class V4AdminAccess(APIView):
                     {"message": f"એડમિન વ્યક્તિ મળી રહી નથી"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-        if not admin_person.is_super_admin:
+        if not admin_person.is_admin:
             if lang == "en":
                 return Response(
                     {
@@ -1419,7 +1420,7 @@ class V4AdminAccess(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         admin_data = get_person_queryset(request).filter(
-            Q(is_admin=True) | Q(is_super_admin=True)
+            Q(is_admin=True)
         )
         serializer = PersonGetV4Serializer(admin_data, context={"lang": lang}, many=True)
         return Response({"admin-data": serializer.data}, status=status.HTTP_200_OK)
@@ -1460,7 +1461,7 @@ class V4AdminAccess(APIView):
                     {"message": f"એડમિન વ્યક્તિ મળી રહી નથી"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-        if not admin_person.is_super_admin:
+        if not admin_person.is_admin:
             if lang == "en":
                 return Response(
                     {
@@ -1547,7 +1548,7 @@ class V4AdminAccess(APIView):
                     {"message": f"એડમિન વ્યક્તિ મળી રહી નથી"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-        if not admin_person.is_super_admin:
+        if not admin_person.is_admin:
             if lang == "en":
                 return Response(
                     {
@@ -1612,21 +1613,11 @@ class V4AdminPersons(APIView):
         lang = request.GET.get("lang", "en")
         # ===== Permission Based Admin List =====
 
-        if person.is_super_admin:
-            # Super admin → all admins
+        if person.is_admin:
+            # All admins get full list
             admin_persons = get_person_queryset(request).filter(
-                Q(is_admin=True) | Q(is_super_admin=True),
+                Q(is_admin=True),
             )
-
-        elif person.is_admin:
-            # Admin → only same village admins
-            if person.samaj and person.samaj.village_id:
-                admin_persons = get_person_queryset(request).filter(
-                    Q(is_admin=True) | Q(is_super_admin=True),
-                    samaj__village_id=person.samaj.village_id,
-                )
-            else:
-                admin_persons = Person.objects.none()
 
         else:
             # Non-admin cannot access
@@ -1715,7 +1706,7 @@ class V4AdminPersons(APIView):
                 Person.objects.filter(
                     Q(surname__id=int(surname)),
                     is_admin=False,
-                    is_super_admin=False,
+                    is_admin=False,
                     flag_show=True,
                     mobile_number1__isnull=False,
                 )
@@ -1790,7 +1781,7 @@ class V4AdminPersonDetailView(APIView):
             admin_person = get_person_queryset(request).get(pk=admin_user_id)
         except Person.DoesNotExist:
             return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
-        if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
+        if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
 
         # Cross-validate X-Mobile-Number header
@@ -1809,6 +1800,7 @@ class V4AdminPersonDetailView(APIView):
             if person:
                 lang = request.GET.get('lang', 'en')
                 person = AdminPersonGetSerializer(person, context={'lang': lang}).data
+                person['is_admin'] = person.get('is_admin', False) or person.get('is_super_admin', False) or person.get('is_super_uper', False)
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
@@ -1839,7 +1831,7 @@ class V4AdminPersonDetailView(APIView):
             admin_person = get_person_queryset(request).get(pk=admin_user_id)
         except Person.DoesNotExist:
             return Response({'message': 'Admin Person with that ID does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
+        if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
 
         # Cross-validate X-Mobile-Number header
@@ -2035,7 +2027,7 @@ class V4AdminPersonDetailView(APIView):
             admin_person = get_person_queryset(request).get(pk=admin_user_id)
         except Person.DoesNotExist:
             return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
-        if not admin_person.is_admin and not admin_person.is_super_admin and not admin_person.is_super_uper:
+        if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
 
         # Cross-validate X-Mobile-Number header
@@ -2237,7 +2229,7 @@ class V4PendingApproveDetailView(APIView):
                     {"message": "User not found"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            if not person.is_admin and not person.is_super_admin:
+            if not person.is_admin:
                 return Response(
                     {"message": "User does not have admin access"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2261,7 +2253,7 @@ class V4PendingApproveDetailView(APIView):
             )  # Modify this line based on your model relationships
 
             # Filter users by surname instead of top_member
-            if person.is_super_admin == True:
+            if person.is_admin == True:
                 pending_users = get_person_queryset(request).filter(
                     flag_show=False
                 ).exclude(id=surname.top_member)
@@ -2343,7 +2335,7 @@ class V4PendingApproveDetailView(APIView):
                     {"message": f"Admin Person not found"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            if not (admin_person.is_admin or admin_person.is_super_admin):
+            if not admin_person.is_admin:
                 return Response(
                     {"message": "User does not have admin access"},
                     status=status.HTTP_200_OK,
@@ -2376,7 +2368,7 @@ class V4PendingApproveDetailView(APIView):
                     {"message": f"Person not found"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            if not admin_person.is_super_admin and person.surname != admin_person.surname:
+            if not admin_person.is_admin and person.surname != admin_person.surname:
                 return Response(
                     {"message": "Unauthorized: User does not belong to your surname"},
                     status=status.HTTP_403_FORBIDDEN,
@@ -2419,7 +2411,7 @@ class V4PendingApproveDetailView(APIView):
                     {"message": f"Admin Person not found"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            if not (admin_person.is_admin or admin_person.is_super_admin):
+            if not admin_person.is_admin:
                 if lang == "guj":
                     return Response(
                         {"message": "વપરાશકર્તા સભ્ય પાસે એડમિન એક્સેસ નથી"},
