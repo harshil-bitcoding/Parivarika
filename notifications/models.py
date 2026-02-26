@@ -1,7 +1,7 @@
 from django.db import models
 from parivar.models import Person
 from notifications.storages import NotificationImageS3Storage
-
+from django.contrib.postgres.indexes import GinIndex
 
 class PersonPlayerId(models.Model):
     PLATFORM_CHOICE = [("Android", "Android"), ("Ios", "Ios")]
@@ -16,6 +16,7 @@ class PersonPlayerId(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
 
 
 class Notification(models.Model):
@@ -35,6 +36,14 @@ class Notification(models.Model):
     is_show_left_time = models.BooleanField(default=False)
     is_show_ad_lable = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["expire_date"]),
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["is_event"]),
+            GinIndex(fields=["filter"]),
+        ]
 
     def __str__(self):
         return self.title

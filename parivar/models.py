@@ -95,6 +95,10 @@ class District(models.Model):
 
     class Meta:
         unique_together = ("name",)
+        indexes = [
+            models.Index(fields=["is_active"]),
+            models.Index(fields=["created_at"]),
+        ]
 
 
 class Taluka(models.Model):
@@ -113,6 +117,11 @@ class Taluka(models.Model):
 
     class Meta:
         unique_together = ("name", "district")
+        indexes = [
+            models.Index(fields=["district"]),
+            models.Index(fields=["is_active"]),
+            models.Index(fields=["created_at"]),
+        ]
 
 
 class Village(models.Model):
@@ -129,6 +138,11 @@ class Village(models.Model):
 
     class Meta:
         unique_together = ("name", "taluka")
+        indexes = [
+            models.Index(fields=["taluka"]),
+            models.Index(fields=["is_active"]),
+            models.Index(fields=["created_at"]),
+        ]
 
 
 class Samaj(models.Model):
@@ -241,6 +255,16 @@ class Person(models.Model):
             "mobile_number1",
             "mobile_number2",
         )
+        indexes = [
+            models.Index(fields=["samaj"]),
+            models.Index(fields=["city"]),
+            models.Index(fields=["state"]),
+            models.Index(fields=["is_deleted"]),
+            models.Index(fields=["created_time"]),
+            models.Index(fields=["surname"]),
+            models.Index(fields=["flag_show"]),
+            models.Index(fields=["mobile_number1"]),
+        ]
 
     def delete(self, *args, **kwargs):
         if self.profile and os.path.isfile(self.profile.path):
@@ -255,7 +279,7 @@ class Person(models.Model):
             self.deleted_at = datetime.now()
         else:
             self.deleted_at = None
-        
+
         # Auto-assign default Patel samaj if no samaj is selected
         # if not self.samaj_id:   
             # try:
@@ -268,13 +292,13 @@ class Person(models.Model):
             #     self.samaj = default_samaj
             # except Exception:
             #     pass  # If samaj assignment fails, continue without it
-        
+
         # Auto-set is_premium based on samaj
         # if self.samaj:
         #     self.is_premium = self.samaj.is_premium
         # else:
         #     self.is_premium = False
-        
+
         super(Person, self).save(*args, **kwargs)
 
 # class Person(models.Model):
@@ -377,6 +401,10 @@ class TranslatePerson(models.Model):
             "address",
             "language",
         )
+        indexes = [
+            models.Index(fields=["language"]),
+            models.Index(fields=["is_deleted"]),
+        ]
 
 
 class ParentChildRelation(models.Model):
@@ -397,6 +425,14 @@ class ParentChildRelation(models.Model):
 
     def __str__(self):
         return str(self.id)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["parent"]),
+            models.Index(fields=["child"]),
+            models.Index(fields=["is_deleted"]),
+            models.Index(fields=["created"]),
+        ]
 
 
 class AdsSetting(models.Model):
@@ -455,3 +491,4 @@ class PersonUpdateLog(models.Model):
     )
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+ 

@@ -607,153 +607,217 @@ class TalukaDistrictView(APIView):
 
 class  V4RelationtreeAPIView(APIView):
 
-    def get(self, request):
-        lang = request.GET.get("lang", "en")
-        person_id = request.GET.get("person_id")
-        mobile_number = request.headers.get("X-Mobile-Number")
-        login_village_id = None
+   def get(self, request):
+       lang = request.GET.get("lang", "en")
+       person_id = request.GET.get("person_id")
+       mobile_number = request.headers.get("X-Mobile-Number")
+       login_village_id = None
 
-        if not mobile_number:
-            return Response(
-                {"error": "Mobile number is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+       if not mobile_number:
+           return Response(
+               {"error": "Mobile number is required"},
+               status=status.HTTP_400_BAD_REQUEST
+           )
 
-        if mobile_number:
-            login_person = get_person_queryset(request).filter(
-                Q(mobile_number1=mobile_number) |
-                Q(mobile_number2=mobile_number),
-            ).select_related("samaj__village").first()
+       if mobile_number:
+           login_person = get_person_queryset(request).filter(
+               Q(mobile_number1=mobile_number) |
+               Q(mobile_number2=mobile_number),
+           ).select_related("samaj__village").first()
 
-            if login_person and login_person.samaj and login_person.samaj.village_id:
-                login_village_id = login_person.samaj.village_id
+           if login_person and login_person.samaj and login_person.samaj.village_id:
+               login_village_id = login_person.samaj.village_id
 
-            if not login_village_id:
-                return Response(
-                    {"error": "Login person's village information is required"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+           if not login_village_id:
+               return Response(
+                   {"error": "Login person's village information is required"},
+                   status=status.HTTP_400_BAD_REQUEST
+               )
+       try:
+           person = get_person_queryset(request).get(id=person_id)
+           surname = person.surname.id
+           surname_topmember = Surname.objects.get(id=surname)
+           topmember = surname_topmember.top_member
+           # Walk ancestor chain: batch lookups using child_id__in to reduce queries
+           relation_qs = get_relation_queryset(request)
+           parent_data_id = set([person_id])
+           to_process = [person_id]
 
-        try:
-            person = get_person_queryset(request).get(id=person_id)
-            surname = person.surname.id
-            surname_topmember = Surname.objects.get(id=surname)
-            topmember = surname_topmember.top_member
+           while to_process:
+               # fetch parent ids for current batch (no unnecessary joins)
+               parent_ids = list(
+                   relation_qs.filter(child_id__in=to_process).values_list("parent_id", flat=True)
+               )
+               to_process = []
+               for parent_id in parent_ids:
+                   if parent_id == topmember:
+                       continue
+                   if parent_id not in parent_data_id:
+                       parent_data_id.add(parent_id)
+                       to_process.append(parent_id)
+           person_data_queryset = (
+               get_person_queryset(request).filter(
+                   surname__id=surname, flag_show=True
+               )
+               .exclude(id__in=parent_data_id)
+               .annotate(
+                   translated_first_name_annotated=Case(
+                       # Gujarati translated name exists
+                       When(
+                           Q(
+                               translateperson__first_name__isnull=False,
+                               translateperson__language=lang,
+                           ) &
+                           ~Q(samaj__village_id=login_village_id),   
+                           then=Concat(
+                               F("translateperson__first_name"),
+                               Value(" ("),
+                               F("samaj__village__name"),
+                               Value(")"),
+                               output_field=CharField(),
+                           ),
+                       ),
+                       # English name outside village
+                       When(
+                           ~Q(samaj__village_id=login_village_id),
+                           then=Concat(
 
-            # Initialize relations with the first query
-            relations = get_relation_queryset(request).filter(child_id=person_id)
-            parent_data_id = {
-                person_id
-            }  # To keep track of already processed parent ids
+                               F("first_name"),
 
-            while relations:
-                new_relations = []
-                for relation in relations:
-                    parent_id = relation.parent.id
-                    if parent_id == topmember:
-                        break
-                    if parent_id not in parent_data_id:
-                        parent_data_id.add(parent_id)
-                        new_relations.extend(
-                            get_relation_queryset(request).filter(
-                                child_id=parent_id
-                            )
-                        )
-                relations = new_relations
-            
-            person_data_queryset = (
-                get_person_queryset(request).filter(
-                    surname__id=surname, flag_show=True
-                )
-                .exclude(id__in=parent_data_id)
-                .annotate(
-                    translated_first_name_annotated=Case(
-                        # Gujarati translated name exists
-                        When(
-                            Q(
-                                translateperson__first_name__isnull=False,
-                                translateperson__language=lang,
-                            ) &
-                            ~Q(samaj__village_id=login_village_id),   
-                            then=Concat(
-                                F("translateperson__first_name"),
-                                Value(" ("),
-                                F("samaj__village__name"),
-                                Value(")"),
-                                output_field=CharField(),
-                            ),
-                        ),
-                        # English name outside village
-                        When(
-                            ~Q(samaj__village_id=login_village_id),
-                            then=Concat(
-                                F("first_name"),
-                                Value(" ("),
-                                F("samaj__village__name"),
-                                Value(")"),
-                                output_field=CharField(),
-                            ),
-                        ),
-                        # Default (same village)
-                        default=Case(
-                            When(
-                                Q(
-                                    translateperson__first_name__isnull=False,
-                                    translateperson__language=lang,
-                                ),
-                                then=F("translateperson__first_name"),
-                            ),
-                            default=F("first_name"),
-                        ),
-                        output_field=CharField(),
-                    ),
-                    translated_middle_name_annotated=Case(
-                        When(
-                            Q(
-                                translateperson__middle_name__isnull=False,
-                                translateperson__language=lang,
-                            ),
-                            then=F("translateperson__middle_name"),
-                        ),
-                        default=F("middle_name"),
-                        output_field=CharField(),
-                    )
-                )
-                .order_by("first_name")
-                .prefetch_related("translateperson")
-            )
+                               Value(" ("),
 
-            # Manual serialization for specific format
-            data = []
-            for p in person_data_queryset:
-                data.append({
-                    "id": p.id,
-                    "date_of_birth": p.date_of_birth,
-                    "profile": p.profile.url if p.profile else os.getenv("DEFAULT_PROFILE_PATH"),
-                    "thumb_profile": p.thumb_profile.url if p.thumb_profile else os.getenv("DEFAULT_PROFILE_PATH"),
-                    "mobile_number1": p.mobile_number1,
-                    "mobile_number2": p.mobile_number2,
-                    "out_of_country": p.out_of_country.name if p.out_of_country else "", # Minimal for relation-tree
-                    "flag_show": p.flag_show,
-                    "emoji": p.emoji if hasattr(p, 'emoji') else "",
-                    "translated_first_name": p.translated_first_name_annotated,
-                    "translated_middle_name": p.translated_middle_name_annotated,
-                })
+                               F("samaj__village__name"),
 
-            return Response({"data": data})
+                               Value(")"),
 
-        except Person.DoesNotExist:
-            return Response(
-                {"error": "Person not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-        except Surname.DoesNotExist:
-            return Response(
-                {"error": "Surname not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+                               output_field=CharField(),
+
+                           ),
+
+                       ),
+
+                       # Default (same village)
+
+                       default=Case(
+
+                           When(
+
+                               Q(
+
+                                   translateperson__first_name__isnull=False,
+
+                                   translateperson__language=lang,
+
+                               ),
+
+                               then=F("translateperson__first_name"),
+
+                           ),
+
+                           default=F("first_name"),
+
+                       ),
+
+                       output_field=CharField(),
+
+                   ),
+
+                   translated_middle_name_annotated=Case(
+
+                       When(
+
+                           Q(
+
+                               translateperson__middle_name__isnull=False,
+
+                               translateperson__language=lang,
+
+                           ),
+
+                           then=F("translateperson__middle_name"),
+
+                       ),
+
+                       default=F("middle_name"),
+
+                       output_field=CharField(),
+
+                   )
+
+               )
+
+               .order_by("first_name")
+
+               .select_related("samaj__village", "out_of_country")
+
+               .prefetch_related("translateperson")
+
+           )
+
+
+
+           # Manual serialization for specific format
+
+           data = []
+
+           for p in person_data_queryset:
+
+               data.append({
+
+                   "id": p.id,
+
+                   "date_of_birth": p.date_of_birth,
+
+                   "profile": p.profile.url if p.profile else os.getenv("DEFAULT_PROFILE_PATH"),
+
+                   "thumb_profile": p.thumb_profile.url if p.thumb_profile else os.getenv("DEFAULT_PROFILE_PATH"),
+
+                   "mobile_number1": p.mobile_number1,
+
+                   "mobile_number2": p.mobile_number2,
+
+                   "out_of_country": p.out_of_country.name if p.out_of_country else "", # Minimal for relation-tree
+
+                   "flag_show": p.flag_show,
+
+                   "emoji": p.emoji if hasattr(p, 'emoji') else "",
+
+                   "translated_first_name": p.translated_first_name_annotated,
+
+                   "translated_middle_name": p.translated_middle_name_annotated,
+
+               })
+
+
+
+           return Response({"data": data})
+
+
+
+       except Person.DoesNotExist:
+
+           return Response(
+
+               {"error": "Person not found"}, status=status.HTTP_404_NOT_FOUND
+
+           )
+
+       except Surname.DoesNotExist:
+
+           return Response(
+
+               {"error": "Surname not found"}, status=status.HTTP_404_NOT_FOUND
+
+           )
+
+       except Exception as e:
+
+           return Response(
+
+               {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+
+           )
+
         
 class V4ParentChildRelationDetailView(APIView):
     def post(self, request):
