@@ -332,7 +332,7 @@ class SurnameByVillageView(APIView):
             )
 
         # Fetch login person
-        login_person = Person.objects.filter(
+        login_person = get_person_queryset(request).filter(
             Q(mobile_number1=mobile_number) |
             Q(mobile_number2=mobile_number),
             is_deleted=False
@@ -379,7 +379,7 @@ class GetSurnameBySamajView(APIView):
         from django.db.models import Count, Q as DQ
         surname_counts = {
             item["surname_id"]: item["total"]
-            for item in Person.objects.filter(
+            for item in get_person_queryset(request).filter(
                 surname__samaj_id=samaj_id,
                 is_deleted=False,
                 flag_show=True,
@@ -574,6 +574,7 @@ class VillageTalukaView(APIView):
         ), 404: "Village not found"}
     )
     def get(self, request, village_id):
+        lang = request.GET.get("lang", "en")
         try:
             village = Village.objects.select_related('taluka', 'taluka__district').get(pk=village_id)
             if not village.is_active or not village.taluka.is_active or not village.taluka.district.is_active:
@@ -595,6 +596,7 @@ class TalukaDistrictView(APIView):
         ), 404: "Taluka not found"}
     )
     def get(self, request, taluka_id):
+        lang = request.GET.get("lang", "en")
         try:
             taluka = Taluka.objects.select_related('district').get(pk=taluka_id)
             if not taluka.is_active or not taluka.district.is_active:
@@ -826,7 +828,7 @@ class V4ParentChildRelationDetailView(APIView):
             parent_id = serializer.validated_data.get("parent_id")
             child_id = serializer.validated_data.get("child_id")
             try:
-                existing_relation = ParentChildRelation.objects.get(
+                existing_relation = get_relation_queryset(request).get(
                     child_id=child_id, is_deleted=False
                 )
                 existing_relation.parent_id = parent_id
@@ -1143,7 +1145,7 @@ class V4ParentChildRelationDetailView(APIView):
                 {"error": "Child not found"}, status=status.HTTP_404_NOT_FOUND
             )
         try:
-            relation = ParentChildRelation.objects.get(child=child, is_deleted=False)
+            relation = get_relation_queryset(request).get(child=child, is_deleted=False)
             if parent != child:
                 try:
                     relation.parent = parent
@@ -1170,7 +1172,7 @@ class V4PersonDetailView(APIView):
     authentication_classes = []
     def get(self, request, pk):
         try:
-            person = Person.objects.filter(is_deleted=False).get(id=pk)
+            person = get_person_queryset(request).filter(is_deleted=False).get(id=pk)
             if person:
                 lang = request.GET.get('lang', 'en')
                 person = PersonGetV4Serializer(person, context={'lang': lang}).data
@@ -1248,7 +1250,7 @@ class V4PersonDetailView(APIView):
         serializer = PersonV4Serializer(data=person_data)
         if serializer.is_valid():
             if len(children) > 0 :
-                children_exist = ParentChildRelation.objects.filter(child__in=children)
+                children_exist = get_relation_queryset(request).filter(child__in=children)
                 if children_exist.exclude(parent=top_member).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=400)
                 children_exist.filter(parent=top_member).delete()
@@ -1374,12 +1376,12 @@ class V4PersonDetailView(APIView):
         serializer = PersonV4Serializer(person, data=person_data, context={'person_id': person.id})
         if serializer.is_valid():
             if len(children) > 0:
-                children_exist = ParentChildRelation.objects.filter(child__in=children)
+                children_exist = get_relation_queryset(request).filter(child__in=children)
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=400)
             persons = serializer.save()
  
-            father_data = ParentChildRelation.objects.filter(child=persons.id)
+            father_data = get_relation_queryset(request).filter(child=persons.id)
             data = {
                     'parent': father,
                     'child': persons.id,
@@ -1394,7 +1396,7 @@ class V4PersonDetailView(APIView):
             if father_data_serializer.is_valid():
                 father_data_serializer.save()
             for child in children:
-                child_data = ParentChildRelation.objects.filter(child=child)
+                child_data = get_relation_queryset(request).filter(child=child)
                 data = {
                     'child': child,
                     'parent': persons.id,
@@ -1409,7 +1411,7 @@ class V4PersonDetailView(APIView):
                 if child_data_serializer.is_valid():
                     child_data_serializer.save()
             if len(children) > 0:       
-                remove_child_person = ParentChildRelation.objects.filter(parent=persons.id).exclude(child__in=children)
+                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
                 if remove_child_person.exists():
                     for child in remove_child_person:
                         child.parent_id = int(top_member)
@@ -1458,7 +1460,7 @@ class V4AdminAccess(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         try:
-            admin_person = Person.objects.get(pk=admin_user_id, is_deleted=False)
+            admin_person = get_person_queryset(request).get(pk=admin_user_id, is_deleted=False)
         except Person.DoesNotExist:
             if lang == "en":
                 return Response(
@@ -1740,14 +1742,14 @@ class V4AdminPersons(APIView):
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
             try:
-                requester = Person.objects.filter(
+                requester = get_person_queryset(request).filter(
                     Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header),
                     is_deleted=False
                 ).select_related("samaj").first()
 
                 top_member_id = Surname.objects.filter(id=int(surname)).values_list("top_member", flat=True).first()
                 if top_member_id:
-                    top_member_person = Person.objects.filter(id=top_member_id, is_deleted=False).select_related("samaj").first()
+                    top_member_person = get_person_queryset(request).filter(id=top_member_id, is_deleted=False).select_related("samaj").first()
                     if (
                         not requester
                         or not top_member_person
@@ -1767,7 +1769,7 @@ class V4AdminPersons(APIView):
                 GetSurnameSerializer(surname_data).data.get("top_member", 0)
             )
             persons = (
-                Person.objects.filter(
+                get_person_queryset(request).filter(
                     Q(surname__id=int(surname)),
                     is_admin=False,
                     flag_show=True,
@@ -1867,16 +1869,16 @@ class V4AdminPersonDetailView(APIView):
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
-                child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
+                child_data = get_relation_queryset(request).filter(parent=int(person["id"]))
                 if child_data.exists():
                     child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
-                parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
+                parent_data = get_relation_queryset(request).filter(child=int(person["id"])).first()
                 if parent_data:
                     parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
                     person['parent'] = parent_data.get("parent")
-                    brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
+                    brother_data = get_relation_queryset(request).filter(parent=int(parent_data.get("parent").get("id", 0)))
                     if brother_data.exists():
                         brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
                         for brother in brother_data:
@@ -1918,7 +1920,7 @@ class V4AdminPersonDetailView(APIView):
                 father = top_member
         children = request.data.get('child', [])
         if len(children) > 0 :
-            children_exist = ParentChildRelation.objects.filter(child__in=children)
+            children_exist = get_relation_queryset(request).filter(child__in=children)
             if children_exist.exclude(parent=top_member).exists():
                 return JsonResponse({'message': 'Children already exist'}, status=400)
             children_exist.filter(parent=top_member).delete()
@@ -2169,27 +2171,27 @@ class V4AdminPersonDetailView(APIView):
         serializer = PersonV4Serializer(person, data=person_data, context={'person_id': person.id})
         if serializer.is_valid():
             if len(children) > 0:
-                children_exist = ParentChildRelation.objects.filter(child__in=children)
+                children_exist = get_relation_queryset(request).filter(child__in=children)
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=status.HTTP_400_BAD_REQUEST)
             
             persons = serializer.save()
  
-            father_data = ParentChildRelation.objects.filter(child=persons.id)
+            father_data = get_relation_queryset(request).filter(child=persons.id)
             if father_data.exists():
                 father_data.update(child=persons.id, parent_id=father)
             else:
                 ParentChildRelation.objects.create(child=persons, parent_id=father, created_user=persons)
  
             for child in children:
-                child_data = ParentChildRelation.objects.filter(child=child)
+                child_data = get_relation_queryset(request).filter(child=child)
                 if child_data.exists() :
                     child_data.update(parent=persons.id, child=child)
                 else :
                     ParentChildRelation.objects.create(child=child, parent=persons.id, created_user=admin_user_id)
  
             if len(children) > 0:       
-                remove_child_person = ParentChildRelation.objects.filter(parent=persons.id).exclude(child__in=children)
+                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
                 if remove_child_person.exists():
                     for child in remove_child_person:
                         child.update(parent_id= int(top_member))
@@ -2210,6 +2212,10 @@ class V4SearchbyPerson(APIView):
         lang = request.data.get("lang", "en")
         search = request.data.get("search", "")
         person_id = request.data.get("person_id")
+        
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if not mobile_header:
+            return JsonResponse({"message": "X-Mobile-Number header is required"}, status=400)
  
         if search == "":
             return JsonResponse({"data": []}, status=200)
@@ -2219,6 +2225,10 @@ class V4SearchbyPerson(APIView):
             login_person = get_person_queryset(request).select_related(
                 "samaj__village"
             ).get(id=person_id)
+            
+            if login_person.mobile_number1 != mobile_header and login_person.mobile_number2 != mobile_header:
+                return JsonResponse({"message": "Unauthorized: Mobile number does not match person"}, status=403)
+                
         except Person.DoesNotExist:
             return JsonResponse({"message": "Person not found"}, status=404)
  
@@ -2524,14 +2534,14 @@ class V4PendingApproveDetailView(APIView):
                 ).values_list("top_member", flat=True)
                 top_member_ids = [int(id) for id in top_member_ids]
                 if len(top_member_ids) > 0:
-                    children = ParentChildRelation.objects.filter(
+                    children = get_relation_queryset(request).filter(
                         parent_id=user_id, is_deleted=False
                     )
                     for child in children:
                         child.parent_id = top_member_ids[0]
                         child.save()
                 try:
-                    child_data = ParentChildRelation.objects.get(
+                    child_data = get_relation_queryset(request).get(
                         child_id=user_id, is_deleted=False
                     )
                     child_data.is_deleted = True
@@ -2737,6 +2747,7 @@ class CSVUploadAPIView(APIView):
     
 class V4BannerDetailView(APIView):
     def get(self, request):
+        lang = request.GET.get("lang", "en")
         today = datetime.now().date()
 
         # Auto-expire banners past their date
@@ -2749,7 +2760,7 @@ class V4BannerDetailView(APIView):
         samaj_id = None
 
         if mobile_header:
-            login_person = Person.objects.filter(
+            login_person = get_person_queryset(request).filter(
                 Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header),
                 is_deleted=False
             ).select_related("samaj").first()
@@ -2985,6 +2996,17 @@ class V4BannerDetailView(APIView):
 
 class V4RandomBannerView(APIView):
     def post(self, request):
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if not mobile_header:
+            return Response({"message": "X-Mobile-Number header is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            admin_person = get_person_queryset(request).get(Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header))
+            if not admin_person.is_admin:
+                return Response({"message": "Unauthorized: Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+        except Person.DoesNotExist:
+            return Response({"message": "Unauthorized: Admin person not found"}, status=status.HTTP_403_FORBIDDEN)
+
         is_random_banner = False
         if "is_random_banner" in request.data:
             is_random_banner = request.data.get("is_random_banner").lower()
@@ -3401,6 +3423,7 @@ class V4CountryWiseSummaryAPIView(APIView):
         )}
     )
     def get(self, request):
+        lang = request.GET.get("lang", "en")
         mobile_number = request.headers.get("X-Mobile-Number")
         if not mobile_number:
             return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -3513,7 +3536,7 @@ class PersonMiddleNameUpdate(APIView):
             "top_member", flat=True
         )
         top_member_ids = [int(id) for id in top_member_ids]
-        allChild = ParentChildRelation.objects.exclude(
+        allChild = get_relation_queryset(request).exclude(
             parent__id__in=top_member_ids, is_deleted=False
         ).order_by("id")
         if allChild and allChild.exists():
@@ -3535,7 +3558,28 @@ class PersonMiddleNameUpdate(APIView):
     
 class AdditionalData(APIView):
     def get(self, request):
-        additional_data_entry = AdsSetting.objects.values("ads_setting").first()
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if not mobile_header:
+            return Response({"message": "X-Mobile-Number header is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        person_exists = get_person_queryset(request).filter(Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header)).exists()
+        if not person_exists:
+            return Response({"message": "Unauthorized: Mobile number does not match any person"}, status=status.HTTP_403_FORBIDDEN)
+
+        lang = request.GET.get("lang", "en")
+        
+        person = get_person_queryset(request).filter(Q(mobile_number1=mobile_header) | Q(mobile_number2=mobile_header)).first()
+        samaj_id = person.samaj_id if person else None
+        
+        # Try to get samaj specific setting
+        additional_data_entry = None
+        if samaj_id:
+            additional_data_entry = AdsSetting.objects.filter(samaj__id=samaj_id).values("ads_setting").first()
+            
+        # Fallback to global setting (samaj is null)
+        if not additional_data_entry:
+            additional_data_entry = AdsSetting.objects.filter(samaj__isnull=True).values("ads_setting").first()
+            
         additional_data = (
             additional_data_entry["ads_setting"] if additional_data_entry else {}
         )
@@ -3637,6 +3681,7 @@ def capitalize_name(name):
     return name.capitalize()
 class FirstCapitalize(APIView):
     def get(self, request):
+        lang = request.GET.get("lang", "en")
         person = Person.objects.all()
         for i in person:
             i.first_name = capitalize_name(i.first_name)
@@ -3647,6 +3692,7 @@ class FirstCapitalize(APIView):
 class BloodGroupDetailView(APIView):
     authentication_classes = []
     def get(self, request):
+        lang = request.GET.get("lang", "en")
         bloodgroup = BloodGroup.objects.all()
         serializer = BloodGroupSerializer(bloodgroup, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -3656,10 +3702,10 @@ class ChildPerson(APIView):
         try:
             person_id = request.GET.get("parent_id")
             lang = request.GET.get("lang", "en")
-            child_ids = ParentChildRelation.objects.filter(
+            child_ids = get_relation_queryset(request).filter(
                 parent=int(person_id)
             ).values_list("child", flat=True)
-            children = Person.objects.filter(id__in=child_ids, is_deleted=False)
+            children = get_person_queryset(request).filter(id__in=child_ids, is_deleted=False)
             child_data = PersonGetSerializer(
                 children, many=True, context={"lang": lang}
             )
@@ -3679,7 +3725,7 @@ class ChildPerson(APIView):
             dob = request.data.get("dob")
             mobile_number = request.data.get("mobile_number") or ""
             platform = request.data.get("platform")
-            person_data = Person.objects.get(id=parent_id, is_deleted=False)
+            person_data = get_person_queryset(request).get(id=parent_id, is_deleted=False)
             person_create = Person.objects.create(
                 first_name=name,
                 middle_name=person_data.first_name,
@@ -3734,7 +3780,7 @@ class ChildPerson(APIView):
             dob = request.data.get("dob")
             mobile_number = request.data.get("mobile_number")
             lang = request.data.get("lang", "en")
-            person_data = Person.objects.get(id=child_id)
+            person_data = get_person_queryset(request).get(id=child_id)
             if person_data:
                 ignore_fields = ['first_name', 'date_of_birth', 'mobile_number1']
                 update_field_message = []
@@ -3789,14 +3835,14 @@ class ChildPerson(APIView):
         try:
             lang = request.data.get("lang", "en")
             child_id = request.data.get("child_id")
-            person = Person.objects.get(id=child_id)
+            person = get_person_queryset(request).get(id=child_id)
             topmember = Surname.objects.get(id=person.surname.id)
             topmaember_id = topmember.top_member
 
             # Fetch the top member Person instance
-            top_member_person = Person.objects.get(id=topmaember_id)
+            top_member_person = get_person_queryset(request).get(id=topmaember_id)
 
-            parent_relation_data = ParentChildRelation.objects.filter(
+            parent_relation_data = get_relation_queryset(request).filter(
                 parent=person, is_deleted=False
             )
             if parent_relation_data:
@@ -3804,7 +3850,7 @@ class ChildPerson(APIView):
                     data.parent = top_member_person
                     data.save()
 
-            relation_data = ParentChildRelation.objects.get(
+            relation_data = get_relation_queryset(request).get(
                 child=person, is_deleted=False
             )
             if relation_data:

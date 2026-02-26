@@ -505,10 +505,27 @@ class NotificationDetailView(APIView):
         )
 
     def post(self, request):
+        person_id = request.data.get("person")
+        if not person_id:
+            return Response({"message": "Person ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        mobile_header = request.headers.get("X-Mobile-Number")
+        if not mobile_header:
+            return Response({"message": "X-Mobile-Number header is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        sender_person = Person.objects.filter(id=person_id, is_deleted=False).first()
+        if not sender_person:
+            return Response({"message": "Sender person not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+        if sender_person.mobile_number1 != mobile_header and sender_person.mobile_number2 != mobile_header:
+            return Response(
+                {"message": "Unauthorized: Mobile number does not match sender"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         title = request.data.get("title")
         sub_title = request.data.get("sub_title")
         image_url = request.FILES.getlist("image_url")
-        person_id = request.data.get("person")
         include_player_ids = request.data.get("include_player_ids", "")
         is_show_left_time = request.data.get("is_show_left_time", False)
         is_all_segment = request.data.get("is_all_segment", "false").lower()
@@ -561,7 +578,6 @@ class NotificationDetailView(APIView):
 
         is_entire_platform = request.data.get("is_entire_platform", "false").lower() == "true"
         # Resolve the sending admin's samaj for scoping (admins can bypass this via is_entire_platform=true)
-        sender_person = Person.objects.filter(id=person_id, is_deleted=False).first()
         sender_samaj = sender_person.samaj if sender_person and not is_entire_platform else None
 
         if include_player_ids and is_all_segment == "false":

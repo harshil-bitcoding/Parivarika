@@ -437,6 +437,9 @@ class ParentChildRelation(models.Model):
 
 class AdsSetting(models.Model):
     app_title = models.CharField(max_length=200)
+    samaj = models.ManyToManyField(
+        "Samaj", blank=True, related_name="ads_settings"
+    )
     ads_setting = models.JSONField()
     commit_no = models.CharField(max_length=200, default="0000")
 
