@@ -209,6 +209,7 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "is_premium",
             "trans_first_name",
             "trans_middle_name",
+            "is_demo",
         ]
 
     def get_surname(self, obj):

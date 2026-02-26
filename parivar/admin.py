@@ -227,6 +227,26 @@ class PersonAdmin(ImportExportModelAdmin):
     ]
     inlines = [TranslatePersonInline]
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        
+        # Sync the guj_first_name and guj_middle_name fields into TranslatePerson
+        if obj.guj_first_name or obj.guj_middle_name:
+            trans_person = TranslatePerson.objects.filter(person_id=obj, language='guj').first()
+            if trans_person:
+                trans_person.first_name = obj.guj_first_name or ''
+                trans_person.middle_name = obj.guj_middle_name or ''
+                trans_person.save()
+            else:
+                TranslatePerson.objects.create(
+                    person_id=obj,
+                    language='guj',
+                    first_name=obj.guj_first_name or '',
+                    middle_name=obj.guj_middle_name or '',
+                    address=obj.address or '',
+                    out_of_address=obj.out_of_address or ''
+                )
+
     def flag_show_billaparivar(self, obj):
         return obj.flag_show
 
@@ -247,14 +267,14 @@ class PersonAdmin(ImportExportModelAdmin):
 
     def guj_first_name(self, obj):
         # Fetch the first name from the TranslatePerson model
-        translate_person = obj.translateperson_set.first()
+        translate_person = obj.translateperson.filter(language='guj').first()
         if translate_person:
             return translate_person.first_name
         return "-"
 
     def guj_middle_name(self, obj):
         # Fetch the first name from the TranslatePerson model
-        translate_person = obj.translateperson_set.first()
+        translate_person = obj.translateperson.filter(language='guj').first()
         if translate_person:
             return translate_person.middle_name
         return "-"
