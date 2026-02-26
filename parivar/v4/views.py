@@ -1706,7 +1706,6 @@ class V4AdminPersons(APIView):
                 Person.objects.filter(
                     Q(surname__id=int(surname)),
                     is_admin=False,
-                    is_admin=False,
                     flag_show=True,
                     mobile_number1__isnull=False,
                 )
