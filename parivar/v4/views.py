@@ -2927,9 +2927,9 @@ class V4BannerDetailView(APIView):
                 {"message": "Please enter Banner Details"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
+ 
         banner = get_object_or_404(Banner, id=banner_id)
-
+ 
         # Validate created_person — must match the banner's original creator
         created_person_id = request.data.get("created_person")
         if not created_person_id:
@@ -2942,15 +2942,29 @@ class V4BannerDetailView(APIView):
                 {"message": "Unauthorized: created_person does not match banner creator"},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
+ 
         # Cross-validate X-Mobile-Number header — caller must be the banner creator
+        # If the header is present, enforce it matches one of the creator's numbers.
+        # If the creator has no mobile numbers, return a clear 403 message.
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
             creator = banner.created_person
-            if (
-                creator.mobile_number1 != mobile_header
-                and creator.mobile_number2 != mobile_header
-            ):
+            creator_m1 = getattr(creator, "mobile_number1", None)
+            creator_m2 = getattr(creator, "mobile_number2", None)
+            # Log values to help debugging (will appear in journal)
+            logger.info(
+                "Banner delete attempt: banner_id=%s incoming_mobile=%s creator_m1=%s creator_m2=%s",
+                pk,
+                mobile_header,
+                creator_m1,
+                creator_m2,
+            )
+            if not creator_m1 and not creator_m2:
+                return Response(
+                    {"message": "Unauthorized: banner creator has no mobile number on record"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if mobile_header != (creator_m1 or "") and mobile_header != (creator_m2 or ""):
                 return Response(
                     {"message": "Unauthorized: Mobile number does not match banner creator"},
                     status=status.HTTP_403_FORBIDDEN,
@@ -2965,10 +2979,10 @@ class V4BannerDetailView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             banner.images = images[0]
-
+ 
         if redirect_url is not None:
             banner.redirect_url = redirect_url
-
+ 
         if expire_days:
             try:
                 expire_days = int(expire_days)
@@ -2986,13 +3000,13 @@ class V4BannerDetailView(APIView):
             else:
                 is_ad_lable = False
             banner.is_ad_lable = is_ad_lable
-
+ 
         try:
             banner.save()
             return Response({"message": "Your Banner Data is Successfully Updated"})
         except Exception as error:
             return Response({"message": str(error)}, status=status.HTTP_400_BAD_REQUEST)
-
+ 
     def delete(self, request, pk):
         try:
             banner = Banner.objects.get(pk=pk)
@@ -3006,15 +3020,27 @@ class V4BannerDetailView(APIView):
                 {"message": f"Failed to fetch Banner record: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
+ 
         # Cross-validate X-Mobile-Number header — caller must be the banner creator
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
             creator = banner.created_person
-            if (
-                creator.mobile_number1 != mobile_header
-                and creator.mobile_number2 != mobile_header
-            ):
+            creator_m1 = getattr(creator, "mobile_number1", None)
+            creator_m2 = getattr(creator, "mobile_number2", None)
+            # Log values to help debugging (will appear in journal)
+            logger.info(
+                "Banner delete attempt: banner_id=%s incoming_mobile=%s creator_m1=%s creator_m2=%s",
+                pk,
+                mobile_header,
+                creator_m1,
+                creator_m2,
+            )
+            if not creator_m1 and not creator_m2:
+                return Response(
+                    {"message": "Unauthorized: banner creator has no mobile number on record"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if mobile_header != (creator_m1 or "") and mobile_header != (creator_m2 or ""):
                 return Response(
                     {"message": "Unauthorized: Mobile number does not match banner creator"},
                     status=status.HTTP_403_FORBIDDEN,
