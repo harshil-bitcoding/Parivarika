@@ -3759,11 +3759,8 @@ class ChildPerson(APIView):
                 )
                 
             person_id = request.GET.get("parent_id")
-            if not person_id and request.data:
-                person_id = request.data.get("parent_id")
-                
             if not person_id:
-                return Response({"message": "parent_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": "parent_id is required in query parameters"}, status=status.HTTP_400_BAD_REQUEST)
                 
             lang = request.GET.get("lang", "en")
             child_ids = get_relation_queryset(request).filter(
