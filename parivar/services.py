@@ -6,7 +6,17 @@ from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.utils import timezone
 from django.core.files.base import ContentFile
-from .models import Surname, Person, District, Taluka, Village, Country, ParentChildRelation, Samaj
+from .models import (
+    Surname,
+    Person,
+    District,
+    Taluka,
+    Village,
+    Country,
+    ParentChildRelation,
+    Samaj,
+    TranslatePerson,
+)
 
 class LocationResolverService:
     @staticmethod
@@ -50,6 +60,40 @@ class LocationResolverService:
         return village, status
 
 class CSVImportService:
+    @staticmethod
+    def upsert_gujarati_translation(person, guj_first_name, guj_middle_name):
+        """
+        Ensure Person Gujarati names are synchronized to TranslatePerson(language='guj').
+        This is additive and does not alter existing relation/import logic.
+        """
+        first_name = (guj_first_name or "").strip()
+        middle_name = (guj_middle_name or "").strip()
+
+        # Nothing to sync if both Gujarati names are empty
+        if not first_name and not middle_name:
+            return
+
+        existing = TranslatePerson.objects.filter(
+            person_id=person,
+            language="guj",
+            is_deleted=False,
+        ).order_by("id").first()
+
+        if existing:
+            existing.first_name = first_name or (existing.first_name or "")
+            existing.middle_name = middle_name or (existing.middle_name or "")
+            existing.save(update_fields=["first_name", "middle_name"])
+        else:
+            TranslatePerson.objects.create(
+                person_id=person,
+                first_name=first_name,
+                middle_name=middle_name,
+                address=person.address or "",
+                out_of_address=person.out_of_address or "",
+                language="guj",
+                is_deleted=False,
+            )
+
     @staticmethod
     def resolve_image_path(image_path, field_type='profile'):
         """
@@ -437,6 +481,9 @@ class CSVImportService:
                         person_defaults['mobile_number1'] = mob1
                         person = Person.objects.create(**person_defaults)
                         created = True
+
+                    # Keep Gujarati name fields synced in TranslatePerson (language='guj')
+                    cls.upsert_gujarati_translation(person, guj_f_name, guj_m_name)
 
                     if created: total_created += 1
                     else: total_updated += 1
