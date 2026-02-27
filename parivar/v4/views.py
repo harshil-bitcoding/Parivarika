@@ -3495,13 +3495,14 @@ class V4CountryWiseSummaryAPIView(APIView):
         summary_qs = base_qs.values(
             country_id=F('out_of_country__id'),
             country_name=F('out_of_country__name'),
+            guj_name=F('out_of_country__guj_name'),
             flag=F('out_of_country__flag')
         ).annotate(
             total_members=Count('id')
         ).order_by('-total_members', 'country_name')
 
         from ..serializers import CountrySummarySerializer
-        serializer = CountrySummarySerializer(summary_qs, many=True)
+        serializer = CountrySummarySerializer(summary_qs, many=True, context={'lang': lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 

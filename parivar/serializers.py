@@ -472,6 +472,12 @@ class CountrySummarySerializer(serializers.Serializer):
             return f"{settings.MEDIA_URL}{flag_path}"
         return None
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if self.context.get("lang") == "guj":
+            data["country_name"] = instance.get("guj_name")
+        return data
+
 # new serializer added ended. 
 
 class PersonSerializer(serializers.ModelSerializer):
@@ -1086,6 +1092,7 @@ class CountryWiseMemberSerializer(serializers.ModelSerializer):
     thumb_profile = serializers.SerializerMethodField(read_only=True, required=False)
     trans_first_name = serializers.SerializerMethodField(read_only=True, required=False)
     trans_middle_name = serializers.SerializerMethodField(read_only=True, required=False)
+    out_of_country = serializers.SerializerMethodField(read_only=True, required=False)
 
     class Meta:
         model = Person
@@ -1103,6 +1110,7 @@ class CountryWiseMemberSerializer(serializers.ModelSerializer):
             "thumb_profile",
             "trans_first_name",
             "trans_middle_name",
+            "out_of_country",
         ]
 
     def get_surname(self, obj):
