@@ -2803,6 +2803,7 @@ class V4BannerDetailView(APIView):
         # Cross-validate X-Mobile-Number header and filter by samaj
         mobile_header = request.headers.get("X-Mobile-Number")
         samaj_id = None
+        login_person = None
 
         if mobile_header:
             login_person = get_person_queryset(request).filter(
@@ -2825,8 +2826,18 @@ class V4BannerDetailView(APIView):
             is_active=False, expire_date__lt=today, is_deleted=False
         )
 
-        # Apply samaj filter if we resolved one from the mobile header
-        if samaj_id:
+        # Apply filters based on admin status
+        if login_person:
+            if login_person.is_admin:
+                # Admin sees all banners within their samaj
+                if samaj_id:
+                    active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
+                    expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
+            else:
+                # Regular user sees only the banners they created
+                active_qs = active_qs.filter(created_person=login_person)
+                expire_qs = expire_qs.filter(created_person=login_person)
+        elif samaj_id:
             active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
             expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
 
@@ -2920,7 +2931,7 @@ class V4BannerDetailView(APIView):
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def put(self, request):
+    def put(self, request, pk):
         banner_id = request.data.get("banner_id")
         if not banner_id:
             return Response(
