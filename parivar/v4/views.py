@@ -3064,7 +3064,7 @@ class V4BannerDetailView(APIView):
                 banner.save()
                 return Response(
                     {"message": f"Banner record ID {pk} deleted successfully."},
-                    status=status.HTTP_204_NO_CONTENT,
+                    status=status.HTTP_200_OK,
                 )
             else:
                 return Response(
