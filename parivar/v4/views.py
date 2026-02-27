@@ -2931,8 +2931,8 @@ class V4BannerDetailView(APIView):
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def put(self, request, pk):
-        banner_id = request.data.get("banner_id")
+    def put(self, request, pk=None):
+        banner_id = request.data.get("banner_id") or pk
         if not banner_id:
             return Response(
                 {"message": "Please enter Banner Details"},
@@ -2964,8 +2964,8 @@ class V4BannerDetailView(APIView):
             creator_m2 = getattr(creator, "mobile_number2", None)
             # Log values to help debugging (will appear in journal)
             logger.info(
-                "Banner delete attempt: banner_id=%s incoming_mobile=%s creator_m1=%s creator_m2=%s",
-                pk,
+                "Banner update attempt: banner_id=%s incoming_mobile=%s creator_m1=%s creator_m2=%s",
+                banner.id,
                 mobile_header,
                 creator_m1,
                 creator_m2,
@@ -3018,7 +3018,12 @@ class V4BannerDetailView(APIView):
         except Exception as error:
             return Response({"message": str(error)}, status=status.HTTP_400_BAD_REQUEST)
  
-    def delete(self, request, pk):
+    def delete(self, request, pk=None):
+        if not pk:
+            return Response(
+                {"message": "Please use /api/v4/banner/<id> for delete"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             banner = Banner.objects.get(pk=pk)
         except Banner.DoesNotExist:
