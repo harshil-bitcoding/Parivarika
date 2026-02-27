@@ -3744,9 +3744,27 @@ class BloodGroupDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class ChildPerson(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
+        ]
+    )
     def get(self, request):
         try:
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if not mobile_header:
+                return Response(
+                    {"message": "X-Mobile-Number header is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
             person_id = request.GET.get("parent_id")
+            if not person_id and request.data:
+                person_id = request.data.get("parent_id")
+                
+            if not person_id:
+                return Response({"message": "parent_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+                
             lang = request.GET.get("lang", "en")
             child_ids = get_relation_queryset(request).filter(
                 parent=int(person_id)
@@ -3758,7 +3776,7 @@ class ChildPerson(APIView):
             return Response({"child_data": child_data.data}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response(
-                {"child_data": [], "Error": e},
+                {"child_data": [], "Error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -3846,8 +3864,20 @@ class ChildPerson(APIView):
                 {"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
+        ]
+    )
     def put(self, request):
         try:
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if not mobile_header:
+                return Response(
+                    {"message": "X-Mobile-Number header is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
             print("Chiled -person -put --", request.data)
             child_id = request.data.get("child_id")
             child_name = request.data.get("child_name")
@@ -3912,11 +3942,23 @@ class ChildPerson(APIView):
             )
         except Exception as e:
             return Response(
-                {"message": e}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('X-Mobile-Number', openapi.IN_HEADER, description="User Mobile Number", type=openapi.TYPE_STRING, required=True),
+        ]
+    )
     def delete(self, request):
         try:
+            mobile_header = request.headers.get("X-Mobile-Number")
+            if not mobile_header:
+                return Response(
+                    {"message": "X-Mobile-Number header is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
             lang = request.data.get("lang", "en")
             # child_id = request.data.get("child_id")
             child_id = request.data.get("child_id") or request.GET.get("child_id")
@@ -3939,26 +3981,27 @@ class ChildPerson(APIView):
                         data.is_deleted = True
                     data.save()
 
-            relation_data = get_relation_queryset(request).get(
-                child=person, is_deleted=False
-            )
-            if relation_data:
-                relation_data.is_deleted = True
-                relation_data.save()
+            relation_data_qs = get_relation_queryset(request).filter(
+            child=person, is_deleted=False
+        )
+            if relation_data_qs.exists():
+                for relation_data in relation_data_qs:
+                    relation_data.is_deleted = True
+                    relation_data.save()
 
-            person.flag_show = False
-            person.is_deleted = True
-            person.save()
+                person.flag_show = False
+                person.is_deleted = True
+                person.save()
 
-            messages = {
-                "deleted_data": {
-                    "en": "Your child is successfully deleted in members",
-                    "guj": "તમારા બાળકને સભ્યોમાંથી સફળતાપૂર્વક કાઢી નાખવામાં આવ્યું છે",
-                },
-            }
-            return Response(
-                {"message": messages["deleted_data"][lang]}, status=status.HTTP_200_OK
-            )
+                messages = {
+                    "deleted_data": {
+                        "en": "Your child is successfully deleted in members",
+                        "guj": "તમારા બાળકને સભ્યોમાંથી સફળતાપૂર્વક કાઢી નાખવામાં આવ્યું છે",
+                    },
+                }
+                return Response(
+                    {"message": messages["deleted_data"][lang]}, status=status.HTTP_200_OK
+                )
         except Exception as error:
             import traceback
             traceback.print_exc()
