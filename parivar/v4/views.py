@@ -38,6 +38,7 @@ from ..serializers import (
     StateSerializer, 
     TalukaSerializer, 
     VillageSerializer,
+    VillageSearchSerializer,
     SamajSerializer,
     PersonV4Serializer,
     SurnameSerializer,
@@ -274,6 +275,32 @@ class VillageDetailView(APIView):
             taluka__district__is_active=True
         )
         serializer = VillageSerializer(villages, many=True, context={"lang": lang})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class VillageSearchView(APIView):
+    @swagger_auto_schema(
+        operation_description="Search villages by name and get associated taluka and district",
+        manual_parameters=[
+            openapi.Parameter('q', openapi.IN_QUERY, description="Search term for village name", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('lang', openapi.IN_QUERY, description="Language (en/guj)", type=openapi.TYPE_STRING)
+        ],
+        responses={200: openapi.Response(description="Villages list with Taluka and District", schema=VillageSearchSerializer(many=True))}
+    )
+    def get(self, request):
+        query = request.GET.get("q", "").strip()
+        lang = request.GET.get("lang", "en")
+        
+        if not query:
+            return Response({"error": "Search query 'q' is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        villages = Village.objects.filter(
+            Q(name__icontains=query) | Q(guj_name__icontains=query),
+            is_active=True,
+            taluka__is_active=True,
+            taluka__district__is_active=True
+        ).select_related('taluka', 'taluka__district').order_by('name')
+        
+        serializer = VillageSearchSerializer(villages, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class SamajListView(APIView):

@@ -190,6 +190,11 @@ urlpatterns = [
         V4Views.VillageDetailView.as_view(),
         name="village_detail",
     ),
+    path(
+        "api/v4/village-search",
+        V4Views.VillageSearchView.as_view(),
+        name="village_search"
+    ),
     path("api/v4/samaj", V4Views.SamajListView.as_view(), name="samaj_list_v4"),
     path("api/v4/samaj-by-village", V4Views.SamajByVillageView.as_view(), name="samaj_by_village_v4"),
 

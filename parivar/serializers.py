@@ -89,6 +89,33 @@ class VillageSerializer(serializers.ModelSerializer):
         return data
 
 
+class VillageSearchSerializer(serializers.ModelSerializer):
+    taluka_name = serializers.ReadOnlyField(source="taluka.name")
+    district_id = serializers.ReadOnlyField(source="taluka.district.id")
+    district_name = serializers.ReadOnlyField(source="taluka.district.name")
+
+    class Meta:
+        model = Village
+        fields = ["id", "name", "guj_name", "taluka", "taluka_name", "district_id", "district_name"]
+
+    def to_representation(self, instance):
+        lang = self.context.get("lang", "en")
+        data = super().to_representation(instance)
+        
+        # Localize village name
+        if lang == "guj" and instance.guj_name:
+            data["name"] = instance.guj_name
+            
+        # Localize taluka & district names if possible
+        if lang == "guj" and instance.taluka:
+            if instance.taluka.guj_name:
+                data["taluka_name"] = instance.taluka.guj_name
+            if instance.taluka.district and instance.taluka.district.guj_name:
+                data["district_name"] = instance.taluka.district.guj_name
+                
+        return data
+
+
 class SamajSerializer(serializers.ModelSerializer):
     """Serializer for Samaj (community) model"""
     village_name = serializers.SerializerMethodField(read_only=True)
