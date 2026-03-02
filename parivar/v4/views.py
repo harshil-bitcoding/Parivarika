@@ -399,6 +399,17 @@ class GetSurnameBySamajView(APIView):
 
         lang = request.GET.get("lang", "en")
 
+        mobile_number = request.headers.get("X-Mobile-Number")
+        login_surname_id = None
+        if mobile_number:
+            login_person = get_person_queryset(request).filter(
+                Q(mobile_number1=mobile_number) |
+                Q(mobile_number2=mobile_number),
+                is_deleted=False
+            ).first()
+            if login_person and login_person.surname_id:
+                login_surname_id = login_person.surname_id
+
         surnames = Surname.objects.filter(samaj_id=samaj_id).order_by('name')
         serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
 
@@ -416,6 +427,9 @@ class GetSurnameBySamajView(APIView):
         data = serializer.data
         for item in data:
             item["total_count"] = str(surname_counts.get(item["id"], 0))
+
+        if login_surname_id:
+            data = sorted(data, key=lambda x: (x.get("id") != login_surname_id, x.get("name", "")))
 
         return Response(data, status=status.HTTP_200_OK)
 
