@@ -294,11 +294,13 @@ class VillageSearchView(APIView):
             return Response({"error": "Search query 'q' is required"}, status=status.HTTP_400_BAD_REQUEST)
             
         villages = Village.objects.filter(
-            Q(name__icontains=query) | Q(guj_name__icontains=query),
+            Q(name__icontains=query) | Q(guj_name__icontains=query) |
+            Q(taluka__name__icontains=query) | Q(taluka__guj_name__icontains=query) |
+            Q(taluka__district__name__icontains=query) | Q(taluka__district__guj_name__icontains=query),
             is_active=True,
             taluka__is_active=True,
             taluka__district__is_active=True
-        ).select_related('taluka', 'taluka__district').order_by('name')
+        ).select_related('taluka', 'taluka__district').order_by('taluka__district__name', 'taluka__name', 'name')
         
         serializer = VillageSearchSerializer(villages, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
