@@ -1224,16 +1224,16 @@ class V4PersonDetailView(APIView):
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
-                child_data = ParentChildRelation.objects.filter(parent=int(person["id"]))
+                child_data = ParentChildRelation.objects.filter(parent=int(person["id"]), is_deleted=False)
                 if child_data.exists():
                     child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
-                parent_data = ParentChildRelation.objects.filter(child=int(person["id"])).first()
+                parent_data = ParentChildRelation.objects.filter(child=int(person["id"]), is_deleted=False).first()
                 if parent_data:
                     parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
                     person['parent'] = parent_data.get("parent")
-                    brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)))
+                    brother_data = ParentChildRelation.objects.filter(parent=int(parent_data.get("parent").get("id", 0)), is_deleted=False)
                     if brother_data.exists():
                         brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
                         for brother in brother_data:
@@ -1987,16 +1987,16 @@ class V4AdminPersonDetailView(APIView):
                 person['child'] = []
                 person['parent'] = {}
                 person['brother'] = []
-                child_data = get_relation_queryset(request).filter(parent=int(person["id"]))
+                child_data = get_relation_queryset(request).filter(parent=int(person["id"]), is_deleted=False)
                 if child_data.exists():
                     child_data = GetParentChildRelationSerializer(child_data, many=True, context={'lang': lang}).data
                     for child in child_data:
                         person['child'].append(child.get("child"))
-                parent_data = get_relation_queryset(request).filter(child=int(person["id"])).first()
+                parent_data = get_relation_queryset(request).filter(child=int(person["id"]), is_deleted=False).first()
                 if parent_data:
                     parent_data = GetParentChildRelationSerializer(parent_data, context={'lang': lang}).data
                     person['parent'] = parent_data.get("parent")
-                    brother_data = get_relation_queryset(request).filter(parent=int(parent_data.get("parent").get("id", 0)))
+                    brother_data = get_relation_queryset(request).filter(parent=int(parent_data.get("parent").get("id", 0)), is_deleted=False)
                     if brother_data.exists():
                         brother_data = GetParentChildRelationSerializer(brother_data, many=True, context={'lang': lang}).data
                         for brother in brother_data:
