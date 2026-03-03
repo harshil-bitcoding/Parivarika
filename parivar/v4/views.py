@@ -2280,8 +2280,7 @@ class V4AdminPersonDetailView(APIView):
             if len(children) > 0:       
                 remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
                 if remove_child_person.exists():
-                    for child in remove_child_person:
-                        child.update(parent_id= int(top_member))
+                    remove_child_person.update(parent_id=int(top_member))
                             
             if guj_first_name or guj_middle_name:
                 lang_data = TranslatePerson.objects.filter(person_id=persons.id, language='guj')
