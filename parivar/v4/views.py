@@ -1266,15 +1266,22 @@ class V4PersonDetailView(APIView):
         city = request.data.get('city')
         state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
-        if (int(out_of_country) == 0) :
-            out_of_country = 1
-        flag_show = request.data.get('flag_show')
+        def parse_bool(val, default):
+            if val is None:
+                return default
+            if isinstance(val, bool):
+                return val
+            if str(val).lower() in ['false', '0', 'no', '']:
+                return False
+            return True
+
+        flag_show = parse_bool(request.data.get('flag_show'), True)
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
         samaj_id = request.data.get('samaj')
         status_name = request.data.get('status')
-        is_admin = request.data.get('is_admin')
-        is_registered_directly = request.data.get('is_registered_directly')
+        is_admin = parse_bool(request.data.get('is_admin'), False)
+        is_registered_directly = parse_bool(request.data.get('is_registered_directly'), False)
         person_data = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -1294,6 +1301,10 @@ class V4PersonDetailView(APIView):
             'is_admin': is_admin,
             'is_registered_directly': is_registered_directly
         }
+        if 'profile' in request.FILES or 'profile' in request.data:
+            person_data['profile'] = request.FILES.get('profile') or request.data.get('profile')
+        if 'thumb_profile' in request.FILES or 'thumb_profile' in request.data:
+            person_data['thumb_profile'] = request.FILES.get('thumb_profile') or request.data.get('thumb_profile')
         serializer = PersonV4Serializer(data=person_data)
         if serializer.is_valid():
             if len(children) > 0 :
@@ -1306,6 +1317,10 @@ class V4PersonDetailView(APIView):
                 persons.surname_id = surname
             if samaj_id:
                 persons.samaj_id = samaj_id
+            if person_data.get('profile'):
+                persons.profile = person_data['profile']
+            if person_data.get('thumb_profile'):
+                persons.thumb_profile = person_data['thumb_profile']
             persons.save()
             try:
                 if not first_name:
@@ -1396,13 +1411,20 @@ class V4PersonDetailView(APIView):
         city = request.data.get('city')
         state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
-        if (int(out_of_country) == 0) :
-            out_of_country = 1
-        flag_show = request.data.get('flag_show')
+        def parse_bool(val, default):
+            if val is None:
+                return default
+            if isinstance(val, bool):
+                return val
+            if str(val).lower() in ['false', '0', 'no', '']:
+                return False
+            return True
+
+        flag_show = parse_bool(request.data.get('flag_show'), person.flag_show)
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
         status_name = request.data.get('status')
-        is_registered_directly = request.data.get('is_registered_directly')
+        is_registered_directly = parse_bool(request.data.get('is_registered_directly'), person.is_registered_directly)
         samaj_id = request.data.get('samaj', person.samaj_id)
         person_data = {
             'first_name' : person.first_name if lang == 'en' else first_name,
@@ -1423,6 +1445,10 @@ class V4PersonDetailView(APIView):
             'is_admin': person.is_admin,
             'is_registered_directly': is_registered_directly
         }
+        if 'profile' in request.FILES or 'profile' in request.data:
+            person_data['profile'] = request.FILES.get('profile') or request.data.get('profile')
+        if 'thumb_profile' in request.FILES or 'thumb_profile' in request.data:
+            person_data['thumb_profile'] = request.FILES.get('thumb_profile') or request.data.get('thumb_profile')
  
         ignore_fields = ['update_field_message', 'id', 'flag_show', 'is_admin', 'is_registered_directly']
         update_field_message = []
@@ -1455,6 +1481,10 @@ class V4PersonDetailView(APIView):
                 persons.surname_id = surname
             if samaj_id:
                 persons.samaj_id = samaj_id
+            if person_data.get('profile'):
+                persons.profile = person_data['profile']
+            if person_data.get('thumb_profile'):
+                persons.thumb_profile = person_data['thumb_profile']
             persons.save()
  
             # Validate father exists before updating/creating relation
@@ -2015,8 +2045,6 @@ class V4AdminPersonDetailView(APIView):
         middle_name = request.data.get('middle_name')
         address = request.data.get('address')
         out_of_country = request.data.get('out_of_country', 1)
-        if (int(out_of_country) == 0) :
-            out_of_country = 1
         out_of_address = request.data.get('out_of_address')
         guj_first_name = request.data.get('guj_first_name') or request.data.get('trans_first_name')
         guj_middle_name = request.data.get('guj_middle_name') or request.data.get('trans_middle_name')
@@ -2082,9 +2110,18 @@ class V4AdminPersonDetailView(APIView):
             'is_demo': is_demo_user,
             'is_registered_directly': is_registered_directly
         }
+        if 'profile' in request.FILES or 'profile' in request.data:
+            person_data['profile'] = request.FILES.get('profile') or request.data.get('profile')
+        if 'thumb_profile' in request.FILES or 'thumb_profile' in request.data:
+            person_data['thumb_profile'] = request.FILES.get('thumb_profile') or request.data.get('thumb_profile')
         serializer = PersonV4Serializer(data=person_data)
         if serializer.is_valid():
             persons = serializer.save()
+            if person_data.get('profile'):
+                persons.profile = person_data['profile']
+            if person_data.get('thumb_profile'):
+                persons.thumb_profile = person_data['thumb_profile']
+            persons.save()
  
             # surname, city, state, samaj, out_of_country are SerializerMethodField
             # (read-only) in PersonV4Serializer, so they are NOT saved by serializer.save().
@@ -2228,23 +2265,28 @@ class V4AdminPersonDetailView(APIView):
         lang = request.data.get('lang', 'en')
         date_of_birth = request.data.get('date_of_birth')
         blood_group = request.data.get('blood_group', 1)
-        # city = request.data.get('city')
-        # state = request.data.get('state')
+        city = request.data.get('city')
+        state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
-        if (int(out_of_country) == 0) :
-            out_of_country = 1
         guj_first_name = request.data.get('guj_first_name') or request.data.get('trans_first_name')
         guj_middle_name = request.data.get('guj_middle_name') or request.data.get('trans_middle_name')
         guj_address = request.data.get('guj_address')
         guj_out_of_address = request.data.get('guj_out_of_address')
-        flag_show = request.data.get('flag_show')
-        if flag_show is None:
-            flag_show = True
+        def parse_bool(val, default):
+            if val is None:
+                return default
+            if isinstance(val, bool):
+                return val
+            if str(val).lower() in ['false', '0', 'no', '']:
+                return False
+            return True
+
+        flag_show = parse_bool(request.data.get('flag_show'), True)
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
         status_name = request.data.get('status')
-        is_admin = request.data.get('is_admin')
-        is_registered_directly = request.data.get('is_registered_directly')
+        is_admin = parse_bool(request.data.get('is_admin'), person.is_admin)
+        is_registered_directly = parse_bool(request.data.get('is_registered_directly'), person.is_registered_directly)
         samaj_id = request.data.get('samaj')
         is_demo_user = admin_person.is_demo if admin_person else False
  
@@ -2255,8 +2297,8 @@ class V4AdminPersonDetailView(APIView):
             'out_of_address': out_of_address,
             'date_of_birth': date_of_birth,
             'blood_group': blood_group,
-            # 'city': city,
-            # 'state': state,
+            'city': city,
+            'state': state,
             'out_of_country': out_of_country,
             'flag_show': flag_show,
             'mobile_number1': mobile_number1,
@@ -2267,6 +2309,10 @@ class V4AdminPersonDetailView(APIView):
             # 'is_admin': is_admin,
             # 'is_registered_directly': is_registered_directly
         }
+        if 'profile' in request.FILES or 'profile' in request.data:
+            person_data['profile'] = request.FILES.get('profile') or request.data.get('profile')
+        if 'thumb_profile' in request.FILES or 'thumb_profile' in request.data:
+            person_data['thumb_profile'] = request.FILES.get('thumb_profile') or request.data.get('thumb_profile')
         print("Person", person_data)
         
         serializer = PersonV4Serializer(person, data=person_data, context={'person_id': person.id})
@@ -2277,6 +2323,15 @@ class V4AdminPersonDetailView(APIView):
                     return JsonResponse({'message': 'Children already exist'}, status=status.HTTP_400_BAD_REQUEST)
             
             persons = serializer.save()
+            if surname:
+                persons.surname_id = surname
+            if samaj_id:
+                persons.samaj_id = samaj_id
+            if person_data.get('profile'):
+                persons.profile = person_data['profile']
+            if person_data.get('thumb_profile'):
+                persons.thumb_profile = person_data['thumb_profile']
+            persons.save()
  
             # Validate father exists before updating/creating relation
             if father and Person.objects.filter(pk=father).exists():
@@ -2312,6 +2367,7 @@ class V4AdminPersonDetailView(APIView):
             return Response({"person": AdminPersonGetSerializer(persons, context={'lang': lang}).data}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
 class V4SearchbyPerson(APIView):
     def post(self, request):
         lang = request.data.get("lang", "en")
