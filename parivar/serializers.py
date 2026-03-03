@@ -183,6 +183,8 @@ class PersonV4Serializer(serializers.ModelSerializer):
     out_of_country = serializers.SerializerMethodField(source='out_of_country.name', read_only=True)
     # relations = serializers.SerializerMethodField()
     village_id = serializers.IntegerField(source='samaj.village_id', read_only=True)
+    taluka_id = serializers.SerializerMethodField(read_only=True)
+    district_id = serializers.SerializerMethodField(read_only=True)
     samaj_id = serializers.IntegerField(source='samaj.id', read_only=True)
     referal_code = serializers.CharField(source='samaj.referral_code', read_only=True)
     is_premium = serializers.BooleanField(source='samaj.is_premium', read_only=True)
@@ -212,6 +214,8 @@ class PersonV4Serializer(serializers.ModelSerializer):
             "district_name",
             "taluka_name",
             "village_id",
+            "taluka_id",
+            "district_id",
             "village_name",
             "profile",
             "thumb_profile",
@@ -270,6 +274,18 @@ class PersonV4Serializer(serializers.ModelSerializer):
                 return obj.samaj.village.taluka.district.guj_name
             return obj.samaj.village.taluka.district.name
         return None
+
+    def get_taluka_id(self, obj):
+        try:
+            return obj.samaj.village.taluka_id
+        except AttributeError:
+            return None
+
+    def get_district_id(self, obj):
+        try:
+            return obj.samaj.village.taluka.district_id
+        except AttributeError:
+            return None
 
     def get_city(self, obj):
         lang = self.context.get("lang", "en")
@@ -972,6 +988,9 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
     village = serializers.SerializerMethodField(source="samaj.village", required=False)
     taluka = serializers.SerializerMethodField(source="samaj.taluka", required=False)
     district = serializers.SerializerMethodField(source="samaj.district", required=False)
+    village_id = serializers.SerializerMethodField(read_only=True)
+    taluka_id = serializers.SerializerMethodField(read_only=True)
+    district_id = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Person
@@ -1007,6 +1026,9 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
             "village",
             "taluka",
             "district",
+            "village_id",
+            "taluka_id",
+            "district_id",
         ]
 
     def get_profile(self, obj):
@@ -1064,6 +1086,24 @@ class AdminPersonGetSerializer(serializers.ModelSerializer):
                 return obj.state.guj_name
             return obj.state.name
         return ""
+
+    def get_village_id(self, obj):
+        try:
+            return obj.samaj.village_id
+        except AttributeError:
+            return None
+
+    def get_taluka_id(self, obj):
+        try:
+            return obj.samaj.village.taluka_id
+        except AttributeError:
+            return None
+
+    def get_district_id(self, obj):
+        try:
+            return obj.samaj.village.taluka.district_id
+        except AttributeError:
+            return None
 
     def get_village(self, obj):
         if obj.samaj and obj.samaj.village:
@@ -1261,6 +1301,9 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
     village = serializers.SerializerMethodField(read_only=True, required=False)
     taluka = serializers.SerializerMethodField(read_only=True, required=False)
     district = serializers.SerializerMethodField(read_only=True, required=False)
+    village_id = serializers.SerializerMethodField(read_only=True)
+    taluka_id = serializers.SerializerMethodField(read_only=True)
+    district_id = serializers.SerializerMethodField(read_only=True)
     samaj = serializers.SerializerMethodField(read_only=True)
     plan = serializers.SerializerMethodField(read_only=True)
     trans_first_name = serializers.SerializerMethodField(read_only=True, required=False)
@@ -1301,6 +1344,9 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
             "taluka",
             "district",
             "village",
+            "village_id",
+            "taluka_id",
+            "district_id",
             "plan",
             "samaj",
             "trans_first_name",
@@ -1408,8 +1454,24 @@ class PersonGetV4Serializer(serializers.ModelSerializer):
                 return obj.samaj.village.guj_name
             return obj.samaj.village.name
         return ""
-    
 
+    def get_village_id(self, obj):
+        try:
+            return obj.samaj.village_id
+        except AttributeError:
+            return None
+
+    def get_taluka_id(self, obj):
+        try:
+            return obj.samaj.village.taluka_id
+        except AttributeError:
+            return None
+
+    def get_district_id(self, obj):
+        try:
+            return obj.samaj.village.taluka.district_id
+        except AttributeError:
+            return None
     def get_surname(self, obj):
         if obj.surname is not None:
             lang = self.context.get("lang", "en")
@@ -1544,12 +1606,18 @@ class PersonGetSerializer(serializers.ModelSerializer):
             "district",
             "taluka",
             "village",
+            "village_id",
+            "taluka_id",
+            "district_id",
             "samaj",
         ]
 
     district = serializers.SerializerMethodField(read_only=True, required=False)
     taluka = serializers.SerializerMethodField(read_only=True, required=False)
     village = serializers.SerializerMethodField(read_only=True, required=False)
+    village_id = serializers.SerializerMethodField(read_only=True)
+    taluka_id = serializers.SerializerMethodField(read_only=True)
+    district_id = serializers.SerializerMethodField(read_only=True)
     samaj = serializers.SerializerMethodField(read_only=True, required=False)
 
     def get_samaj(self, obj):
@@ -1588,6 +1656,24 @@ class PersonGetSerializer(serializers.ModelSerializer):
                 return district.guj_name
             return district.name
         return ""
+
+    def get_village_id(self, obj):
+        try:
+            return obj.samaj.village_id
+        except AttributeError:
+            return None
+
+    def get_taluka_id(self, obj):
+        try:
+            return obj.samaj.village.taluka_id
+        except AttributeError:
+            return None
+
+    def get_district_id(self, obj):
+        try:
+            return obj.samaj.village.taluka.district_id
+        except AttributeError:
+            return None
 
     # def get_password(self, obj) :
     #     is_password_required = self.context.get('is_password_required', False)
