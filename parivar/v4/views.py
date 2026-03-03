@@ -1252,7 +1252,21 @@ class V4PersonDetailView(APIView):
             top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0 :
                 father = top_member
-        children = request.data.get('child', [])
+        has_child_field = 'child' in request.data
+        children_raw = request.data.get('child', [])
+        if not isinstance(children_raw, list):
+            children_raw = [children_raw] if children_raw not in (None, "") else []
+        children = []
+        seen_children = set()
+        for child_id in children_raw:
+            try:
+                child_id = int(child_id)
+            except (TypeError, ValueError):
+                continue
+            if child_id <= 0 or child_id in seen_children:
+                continue
+            seen_children.add(child_id)
+            children.append(child_id)
         first_name = request.data.get('first_name')
         middle_name = request.data.get('middle_name')
         address = request.data.get('address')
@@ -1397,7 +1411,21 @@ class V4PersonDetailView(APIView):
             top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0:
                 father = top_member
-        children = request.data.get('child', [])
+        has_child_field = 'child' in request.data
+        children_raw = request.data.get('child', [])
+        if not isinstance(children_raw, list):
+            children_raw = [children_raw] if children_raw not in (None, "") else []
+        children = []
+        seen_children = set()
+        for child_id in children_raw:
+            try:
+                child_id = int(child_id)
+            except (TypeError, ValueError):
+                continue
+            if child_id <= 0 or child_id in seen_children:
+                continue
+            seen_children.add(child_id)
+            children.append(child_id)
         first_name = request.data.get('first_name')
         middle_name = request.data.get('middle_name')
         address = request.data.get('address')
@@ -1473,7 +1501,7 @@ class V4PersonDetailView(APIView):
             
         serializer = PersonV4Serializer(person, data=person_data, context={'person_id': person.id})
         if serializer.is_valid():
-            if len(children) > 0:
+            if has_child_field and len(children) > 0:
                 children_exist = get_relation_queryset(request).filter(child__in=children)
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=400)
@@ -1504,30 +1532,50 @@ class V4PersonDetailView(APIView):
                     father_data_serializer = ParentChildRelationSerializer(data=data)
                 if father_data_serializer.is_valid():
                     father_data_serializer.save()
-            for child in children:
-                # Validate child exists before updating/creating relation
-                if not Person.objects.filter(pk=child).exists():
-                    continue
-                child_data = get_relation_queryset(request).filter(child=child)
-                data = {
-                    'child': child,
-                    'parent': persons.id,
-                    'created_user': persons.id
-                }
-                child_data_serializer = None
-                if child_data.exists() :
-                    child_data = child_data.first()
-                    child_data_serializer = ParentChildRelationSerializer(child_data, data=data)
-                else :
-                    child_data_serializer = ParentChildRelationSerializer(data=data)
-                if child_data_serializer.is_valid():
-                    child_data_serializer.save()
-            if len(children) > 0:       
-                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
-                if remove_child_person.exists() and top_member and Person.objects.filter(pk=int(top_member)).exists():
-                    for child in remove_child_person:
-                        child.parent_id = int(top_member)
-                        child.save()
+            if has_child_field:
+                is_demo_user = is_demo_login(request)
+
+                for child in children:
+                    # Validate child exists before updating/creating relation
+                    if not get_person_queryset(request).filter(pk=child).exists():
+                        continue
+
+                    # Prefer active relation in current dataset.
+                    child_data = get_relation_queryset(request).filter(child=child).first()
+                    if child_data:
+                        child_data.parent_id = persons.id
+                        child_data.child_id = child
+                        child_data.created_user_id = persons.id
+                        child_data.save(update_fields=["parent", "child", "created_user"])
+                        continue
+
+                    # If a soft-deleted relation exists, revive it instead of creating duplicate.
+                    deleted_child_data = ParentChildRelation.objects.filter(
+                        child_id=child, is_demo=is_demo_user
+                    ).order_by("-id").first()
+
+                    if deleted_child_data:
+                        deleted_child_data.parent_id = persons.id
+                        deleted_child_data.child_id = child
+                        deleted_child_data.created_user_id = persons.id
+                        deleted_child_data.is_deleted = False
+                        deleted_child_data.save(
+                            update_fields=["parent", "child", "created_user", "is_deleted"]
+                        )
+                    else:
+                        ParentChildRelation.objects.create(
+                            child_id=child,
+                            parent_id=persons.id,
+                            created_user_id=persons.id,
+                            is_demo=is_demo_user,
+                        )
+
+                # Child list માં ના હોય તે links remove કરો (soft delete only relation).
+                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(
+                    child__in=children
+                )
+                if remove_child_person.exists():
+                    remove_child_person.update(is_deleted=True)
             if guj_first_name or guj_middle_name:
                 lang_data = TranslatePerson.objects.filter(person_id=persons.id, language='guj')
                 if lang_data.exists():
@@ -2036,7 +2084,21 @@ class V4AdminPersonDetailView(APIView):
             top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0 :
                 father = top_member
-        children = request.data.get('child', [])
+        has_child_field = 'child' in request.data
+        children_raw = request.data.get('child', [])
+        if not isinstance(children_raw, list):
+            children_raw = [children_raw] if children_raw not in (None, "") else []
+        children = []
+        seen_children = set()
+        for child_id in children_raw:
+            try:
+                child_id = int(child_id)
+            except (TypeError, ValueError):
+                continue
+            if child_id <= 0 or child_id in seen_children:
+                continue
+            seen_children.add(child_id)
+            children.append(child_id)
         if len(children) > 0 :
             children_exist = get_relation_queryset(request).filter(child__in=children)
             if children_exist.exclude(parent=top_member).exists():
@@ -2258,7 +2320,21 @@ class V4AdminPersonDetailView(APIView):
             top_member = int(GetSurnameSerializer(persons_surname_wise).data.get("top_member", 0) or 0)
             if father == 0:
                 father = top_member
-        children = request.data.get('child', [])
+        has_child_field = 'child' in request.data
+        children_raw = request.data.get('child', [])
+        if not isinstance(children_raw, list):
+            children_raw = [children_raw] if children_raw not in (None, "") else []
+        children = []
+        seen_children = set()
+        for child_id in children_raw:
+            try:
+                child_id = int(child_id)
+            except (TypeError, ValueError):
+                continue
+            if child_id <= 0 or child_id in seen_children:
+                continue
+            seen_children.add(child_id)
+            children.append(child_id)
         first_name = request.data.get('first_name')
         middle_name = request.data.get('middle_name')
         address = request.data.get('address')
@@ -2318,7 +2394,7 @@ class V4AdminPersonDetailView(APIView):
         
         serializer = PersonV4Serializer(person, data=person_data, context={'person_id': person.id})
         if serializer.is_valid():
-            if len(children) > 0:
+            if has_child_field and len(children) > 0:
                 children_exist = get_relation_queryset(request).filter(child__in=children)
                 if children_exist.exclude(parent=top_member).exclude(parent=person.id).exists():
                     return JsonResponse({'message': 'Children already exist'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2342,20 +2418,50 @@ class V4AdminPersonDetailView(APIView):
                 else:
                     ParentChildRelation.objects.create(child=persons, parent_id=father, created_user=persons, is_demo=is_demo_user)
  
-            for child in children:
-                # Validate child exists before updating/creating relation
-                if not Person.objects.filter(pk=child).exists():
-                    continue
-                child_data = get_relation_queryset(request).filter(child=child)
-                if child_data.exists() :
-                    child_data.update(parent=persons.id, child=child, is_demo=is_demo_user)
-                else :
-                    ParentChildRelation.objects.create(child=child, parent=persons.id, created_user=admin_user_id, is_demo=is_demo_user)
- 
-            if len(children) > 0:       
-                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
-                if remove_child_person.exists() and top_member and Person.objects.filter(pk=int(top_member)).exists():
-                    remove_child_person.update(parent_id=int(top_member))
+            if has_child_field:
+                for child in children:
+                    # Validate child exists before updating/creating relation
+                    if not get_person_queryset(request).filter(pk=child).exists():
+                        continue
+
+                    # Prefer active relation in current dataset.
+                    child_data = get_relation_queryset(request).filter(child=child).first()
+                    if child_data:
+                        child_data.parent_id = persons.id
+                        child_data.child_id = child
+                        child_data.created_user_id = admin_user_id
+                        child_data.is_demo = is_demo_user
+                        child_data.save(update_fields=["parent", "child", "created_user", "is_demo"])
+                        continue
+
+                    # If soft-deleted relation exists, revive it.
+                    deleted_child_data = ParentChildRelation.objects.filter(
+                        child_id=child, is_demo=is_demo_user
+                    ).order_by("-id").first()
+
+                    if deleted_child_data:
+                        deleted_child_data.parent_id = persons.id
+                        deleted_child_data.child_id = child
+                        deleted_child_data.created_user_id = admin_user_id
+                        deleted_child_data.is_demo = is_demo_user
+                        deleted_child_data.is_deleted = False
+                        deleted_child_data.save(
+                            update_fields=["parent", "child", "created_user", "is_demo", "is_deleted"]
+                        )
+                    else:
+                        ParentChildRelation.objects.create(
+                            child_id=child,
+                            parent_id=persons.id,
+                            created_user_id=admin_user_id,
+                            is_demo=is_demo_user,
+                        )
+
+                # child list માં ના હોય તે links soft delete કરો (re-parent નહિ).
+                remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(
+                    child__in=children
+                )
+                if remove_child_person.exists():
+                    remove_child_person.update(is_deleted=True)
                             
             if guj_first_name or guj_middle_name:
                 lang_data = TranslatePerson.objects.filter(person_id=persons.id, language='guj')
