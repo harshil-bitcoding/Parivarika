@@ -393,8 +393,12 @@ class PersonV4Serializer(serializers.ModelSerializer):
                     "message": "Mobile number 1 and 2 cannot be same."
                 })
 
-            # uniqueness check
-            person_id = self.instance.id if self.instance else None
+            # uniqueness check — exclude the record being updated
+            person_id = (
+                self.instance.id
+                if self.instance
+                else self.context.get("person_id")
+            )
 
             query = Q()
             for num in mobile_numbers:
@@ -659,8 +663,12 @@ class PersonSerializer(serializers.ModelSerializer):
                     "message": "Mobile number 1 and 2 cannot be same."
                 })
 
-            # uniqueness check
-            person_id = self.instance.id if self.instance else None
+            # uniqueness check — exclude the record being updated
+            person_id = (
+                self.instance.id
+                if self.instance
+                else self.context.get("person_id")
+            )
 
             query = Q()
             for num in mobile_numbers:
