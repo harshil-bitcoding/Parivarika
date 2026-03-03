@@ -1,0 +1,364 @@
+{% load i18n static %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE|default:'en-us' }}" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{% trans "Log in" %} — Bila Parivar Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --brand: #1565C0;
+            --brand-dark: #0D47A1;
+            --brand-light: #90CAF9;
+            --accent: #42A5F5;
+            --success: #00b894;
+            --bg: #060E1F;
+            --surface: #0A1929;
+            --surface2: #0D2137;
+            --text: #e8eaf6;
+            --text-muted: #607d8b;
+            --border: #0D3B6E;
+            --radius: 16px;
+            --shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 4px 20px rgba(21, 101, 192, 0.20);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            color: var(--text);
+        }
+
+        /* ── Animated Background ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 700px 500px at 15% 20%, rgba(21, 101, 192, 0.20) 0%, transparent 70%),
+                radial-gradient(ellipse 600px 400px at 85% 80%, rgba(21, 101, 192, 0.10) 0%, transparent 70%),
+                radial-gradient(ellipse 500px 500px at 50% 50%, rgba(0, 184, 148, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── Floating Orbs ── */
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.25;
+            pointer-events: none;
+            animation: drift 12s ease-in-out infinite;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: var(--brand);
+            top: -100px;
+            left: -100px;
+            animation-delay: 0s;
+        }
+
+        .orb-2 {
+            width: 300px;
+            height: 300px;
+            background: var(--accent);
+            bottom: -80px;
+            right: -80px;
+            animation-delay: -4s;
+        }
+
+        .orb-3 {
+            width: 200px;
+            height: 200px;
+            background: var(--success);
+            top: 50%;
+            left: 80%;
+            animation-delay: -8s;
+        }
+
+        @keyframes drift {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -20px) scale(1.05);
+            }
+
+            66% {
+                transform: translate(-20px, 30px) scale(0.95);
+            }
+        }
+
+        /* ── Login Card ── */
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 440px;
+            padding: 24px 16px;
+        }
+
+        .login-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 48px 44px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(20px);
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.97);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* ── Logo / Brand ── */
+        .login-logo {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .logo-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--accent) 100%);
+            font-size: 32px;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 32px rgba(21, 101, 192, 0.44);
+            animation: pulse-glow 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                box-shadow: 0 8px 32px rgba(21, 101, 192, 0.44);
+            }
+
+            50% {
+                box-shadow: 0 8px 48px rgba(21, 101, 192, 0.75);
+            }
+        }
+
+        .login-title {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--text);
+            line-height: 1.2;
+        }
+
+        .login-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            font-weight: 400;
+        }
+
+        /* ── Form ── */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--surface2);
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: var(--brand);
+            background: #0D2137;
+            box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.18);
+        }
+
+        input::placeholder {
+            color: #555577;
+        }
+
+        /* ── Login Button ── */
+        .submit-row {
+            margin-top: 28px;
+        }
+
+        input[type="submit"] {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+            border: none;
+            border-radius: 12px;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 24px rgba(21, 101, 192, 0.44);
+        }
+
+        input[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(21, 101, 192, 0.60);
+        }
+
+        input[type="submit"]:active {
+            transform: translateY(0);
+        }
+
+        /* ── Error messages ── */
+        .errornote {
+            background: rgba(21, 101, 192, 0.13);
+            border: 1px solid rgba(21, 101, 192, 0.38);
+            border-radius: 10px;
+            color: #90CAF9;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .errornote::before {
+            content: '⚠️ ';
+        }
+
+        /* ── Footer ── */
+        .login-footer {
+            text-align: center;
+            margin-top: 28px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .login-footer a {
+            color: var(--brand-light);
+            text-decoration: none;
+        }
+
+        /* ── CSRF helper ── */
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Floating background orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="login-wrapper">
+        <div class="login-card">
+
+            <!-- Brand Logo -->
+            <div class="login-logo">
+                <div class="logo-icon">🏡</div>
+                <div class="login-title">Bila Parivar Admin</div>
+                <div class="login-subtitle">Sign in to manage your community</div>
+            </div>
+
+            <!-- Error display -->
+            {% if form.errors %}
+            <p class="errornote">
+                {% if form.errors.items|length == 1 %}{% trans "Please correct the error below." %}
+                {% else %}{% trans "Please correct the errors below." %}{% endif %}
+            </p>
+            {% endif %}
+            {% if error_message %}
+            <p class="errornote">{{ error_message }}</p>
+            {% endif %}
+
+            <!-- Login Form -->
+            <form action="{{ app_path }}" method="post" id="login-form" autocomplete="off">
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label for="id_username">{% trans "Username" %}</label>
+                    <input type="text" name="username" id="id_username" autocomplete="username"
+                        placeholder="Enter your username" autofocus required {% if user_name %}value="{{ user_name }}"
+                        {% endif %}>
+                </div>
+
+                <div class="form-group">
+                    <label for="id_password">{% trans "Password" %}</label>
+                    <input type="password" name="password" id="id_password" autocomplete="current-password"
+                        placeholder="••••••••••" required>
+                </div>
+
+                {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+
+                <div class="submit-row">
+                    <input type="submit" value="{% trans 'Sign In' %}">
+                </div>
+            </form>
+
+            <div class="login-footer">
+                Bila Parivar Community Directory &copy; 2026
+            </div>
+
+        </div>
+    </div>
+
+</body>
+
+</html>

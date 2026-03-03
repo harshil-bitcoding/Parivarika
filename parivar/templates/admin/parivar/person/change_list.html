@@ -9,3 +9,12 @@
   </a>
 </li>
 {% endblock %}
+
+{% block content %}
+{% if samaj_scope_label %}
+<div class="samaj-scope-banner">{{ samaj_scope_label }}</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}
+
+<!-- 606c38, 283618, fefae0, dda15e, bc6c25 -->
