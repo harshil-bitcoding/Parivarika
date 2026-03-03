@@ -6,7 +6,7 @@ def is_demo_login(request):
     if not mobile and hasattr(request, 'data'):
         mobile = request.data.get("mobile_number")
         
-    return mobile == "1111111111"
+    return mobile == "9898989898"
 
 def get_person_queryset(request):
     from .models import Person

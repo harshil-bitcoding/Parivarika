@@ -29,7 +29,7 @@ from ..models import (
 # from ..services import LocationResolverService, CSVImportService
 from django.conf import settings
 from notifications.models import PersonPlayerId
-from ..utils import get_person_queryset, get_relation_queryset
+from ..utils import get_person_queryset, get_relation_queryset, is_demo_login
 from ..serializers import (
     CountryWiseMemberSerializer,
     DistrictSerializer,
@@ -415,15 +415,16 @@ class GetSurnameBySamajView(APIView):
         surnames = Surname.objects.filter(samaj_id=samaj_id).order_by('name')
         serializer = SurnameSerializer(surnames, many=True, context={"lang": lang})
 
-        # Annotate total person count per surname
-        from django.db.models import Count, Q as DQ
+        is_demo = is_demo_login(request)
+        count_qs = get_person_queryset(request).filter(
+            surname__samaj_id=samaj_id,
+            is_deleted=False,
+        )
+        if not is_demo:
+            count_qs = count_qs.filter(flag_show=True)
         surname_counts = {
             item["surname_id"]: item["total"]
-            for item in get_person_queryset(request).filter(
-                surname__samaj_id=samaj_id,
-                is_deleted=False,
-                flag_show=True,
-            ).values("surname_id").annotate(total=Count("id"))
+            for item in count_qs.values("surname_id").annotate(total=Count("id"))
         }
 
         data = serializer.data
@@ -2777,14 +2778,36 @@ class PersonBySurnameViewV4(APIView):
             ).values("middle_name")[:1]
         )
 
-        persons_qs = (
-            queryset.exclude(
-                id__in=Surname.objects.exclude(
-                    top_member__in=["", None]
-                ).annotate(
-                    top_member_as_int=Cast("top_member", IntegerField())
-                ).values_list("top_member_as_int", flat=True)
+        # Exclude top members for both real and demo scopes.
+        # 1) Use configured Surname.top_member when it belongs to current scope.
+        # 2) Also derive root members from relation graph in current scope (demo-aware).
+        top_member_ids = set()
+        configured_top_member = (
+            Surname.objects.filter(id=surname)
+            .exclude(top_member__in=["", None])
+            .annotate(top_member_as_int=Cast("top_member", IntegerField()))
+            .values_list("top_member_as_int", flat=True)
+            .first()
+        )
+        if configured_top_member and queryset.filter(id=configured_top_member).exists():
+            top_member_ids.add(configured_top_member)
+
+        scoped_member_ids = list(queryset.values_list("id", flat=True))
+        if scoped_member_ids:
+            scoped_relations = get_relation_queryset(request).filter(
+                parent_id__in=scoped_member_ids,
+                child_id__in=scoped_member_ids,
             )
+            parent_ids = set(scoped_relations.values_list("parent_id", flat=True))
+            child_ids = set(scoped_relations.values_list("child_id", flat=True))
+            top_member_ids.update(parent_ids - child_ids)
+
+        persons_base_qs = (
+            queryset.exclude(id__in=top_member_ids) if top_member_ids else queryset
+        )
+
+        persons_qs = (
+            persons_base_qs
             .select_related("surname")
             .annotate(
                 trans_fname=trans_first_name_sq,
