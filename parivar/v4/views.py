@@ -1321,14 +1321,19 @@ class V4PersonDetailView(APIView):
             except IntegrityError as e:
                 # Handle potential duplicate username or other database integrity errors
                 print(f"IntegrityError encountered: {e}")
-            parent_serializer = ParentChildRelationSerializer(data={
-                                'parent': father,
-                                'child': persons.id,
-                                'created_user': persons.id
-                            })
-            if parent_serializer.is_valid():
-                parent_serializer.save()
+            # Validate father exists before creating relation
+            if father and Person.objects.filter(pk=father).exists():
+                parent_serializer = ParentChildRelationSerializer(data={
+                                    'parent': father,
+                                    'child': persons.id,
+                                    'created_user': persons.id
+                                })
+                if parent_serializer.is_valid():
+                    parent_serializer.save()
             for child in children :
+                # Validate child exists before creating relation
+                if not Person.objects.filter(pk=child).exists():
+                    continue
                 child_serializer = ParentChildRelationSerializer(data={
                                 'child': child,
                                 'parent': persons.id,
@@ -1397,7 +1402,6 @@ class V4PersonDetailView(APIView):
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
         status_name = request.data.get('status')
-        is_admin = request.data.get('is_admin')
         is_registered_directly = request.data.get('is_registered_directly')
         samaj_id = request.data.get('samaj', person.samaj_id)
         person_data = {
@@ -1416,7 +1420,7 @@ class V4PersonDetailView(APIView):
             'status': status_name,
             'surname': surname,
             'samaj': samaj_id,
-            'is_admin': is_admin,
+            'is_admin': person.is_admin,
             'is_registered_directly': is_registered_directly
         }
  
@@ -1453,21 +1457,26 @@ class V4PersonDetailView(APIView):
                 persons.samaj_id = samaj_id
             persons.save()
  
-            father_data = get_relation_queryset(request).filter(child=persons.id)
-            data = {
-                    'parent': father,
-                    'child': persons.id,
-                    'created_user': persons.id
-                }
-            father_data_serializer = None
-            if father_data.exists() :
-                father_data = father_data.first()
-                father_data_serializer = ParentChildRelationSerializer(father_data, data=data)
-            else :
-                father_data_serializer = ParentChildRelationSerializer(data=data)
-            if father_data_serializer.is_valid():
-                father_data_serializer.save()
+            # Validate father exists before updating/creating relation
+            if father and Person.objects.filter(pk=father).exists():
+                father_data = get_relation_queryset(request).filter(child=persons.id)
+                data = {
+                        'parent': father,
+                        'child': persons.id,
+                        'created_user': persons.id
+                    }
+                father_data_serializer = None
+                if father_data.exists() :
+                    father_data = father_data.first()
+                    father_data_serializer = ParentChildRelationSerializer(father_data, data=data)
+                else :
+                    father_data_serializer = ParentChildRelationSerializer(data=data)
+                if father_data_serializer.is_valid():
+                    father_data_serializer.save()
             for child in children:
+                # Validate child exists before updating/creating relation
+                if not Person.objects.filter(pk=child).exists():
+                    continue
                 child_data = get_relation_queryset(request).filter(child=child)
                 data = {
                     'child': child,
@@ -1484,7 +1493,7 @@ class V4PersonDetailView(APIView):
                     child_data_serializer.save()
             if len(children) > 0:       
                 remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
-                if remove_child_person.exists():
+                if remove_child_person.exists() and top_member and Person.objects.filter(pk=int(top_member)).exists():
                     for child in remove_child_person:
                         child.parent_id = int(top_member)
                         child.save()
@@ -1521,7 +1530,7 @@ class V4PersonDetailView(APIView):
             return Response({"message": "Person record deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response({"message": f"Failed to delete the person record: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
 class V4AdminAccess(APIView):
     def get(self, request):
         lang = request.GET.get("lang", "en")
@@ -1926,7 +1935,7 @@ class V4AdminPersonDetailView(APIView):
             return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
-
+ 
         # Cross-validate X-Mobile-Number header
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
@@ -1976,7 +1985,7 @@ class V4AdminPersonDetailView(APIView):
             return Response({'message': 'Admin Person with that ID does not exist'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
-
+ 
         # Cross-validate X-Mobile-Number header
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
@@ -2052,7 +2061,7 @@ class V4AdminPersonDetailView(APIView):
                     samaj_id = samaj_from_village.id
                     
         is_demo_user = admin_person.is_demo if admin_person else False
-
+ 
         person_data = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -2076,17 +2085,17 @@ class V4AdminPersonDetailView(APIView):
         serializer = PersonV4Serializer(data=person_data)
         if serializer.is_valid():
             persons = serializer.save()
-
+ 
             # surname, city, state, samaj, out_of_country are SerializerMethodField
             # (read-only) in PersonV4Serializer, so they are NOT saved by serializer.save().
             # Validate each FK against DB before assigning to avoid IntegrityErrors.
             fk_update_fields = []
-
+ 
             # Surname: use the already-queried object (guaranteed to exist)
             if persons_surname_wise:
                 persons.surname_id = persons_surname_wise.id
                 fk_update_fields.append('surname')
-
+ 
             # City: look up first to ensure it exists
             if city:
                 try:
@@ -2096,7 +2105,7 @@ class V4AdminPersonDetailView(APIView):
                         fk_update_fields.append('city')
                 except (ValueError, TypeError):
                     pass
-
+ 
             # State: look up first to ensure it exists
             if state:
                 try:
@@ -2106,7 +2115,7 @@ class V4AdminPersonDetailView(APIView):
                         fk_update_fields.append('state')
                 except (ValueError, TypeError):
                     pass
-
+ 
             # Samaj: use resolved samaj_id (from surname or village fallback above)
             if samaj_id:
                 try:
@@ -2116,7 +2125,7 @@ class V4AdminPersonDetailView(APIView):
                         fk_update_fields.append('samaj')
                 except (ValueError, TypeError):
                     pass
-
+ 
             # Country: look up first to ensure it exists
             if out_of_country:
                 try:
@@ -2126,23 +2135,28 @@ class V4AdminPersonDetailView(APIView):
                         fk_update_fields.append('out_of_country')
                 except (ValueError, TypeError):
                     pass
-
+ 
             if fk_update_fields:
                 persons.save(update_fields=fk_update_fields)
-
+ 
             # Refresh from DB to clear in-memory FK caches (samaj→village→taluka→district)
             persons.refresh_from_db()
-
-            parent_serializer = ParentChildRelationSerializer(data={
-                                'parent': father,
-                                'child': persons.id,
-                                'created_user': persons.id,
-                                'is_demo': is_demo_user
-                            })
-            if parent_serializer.is_valid():
-                parent_serializer.save()
+ 
+            # Validate father exists before creating relation
+            if father and Person.objects.filter(pk=father).exists():
+                parent_serializer = ParentChildRelationSerializer(data={
+                                    'parent': father,
+                                    'child': persons.id,
+                                    'created_user': persons.id,
+                                    'is_demo': is_demo_user
+                                })
+                if parent_serializer.is_valid():
+                    parent_serializer.save()
  
             for child in children :
+                # Validate child exists before creating relation
+                if not Person.objects.filter(pk=child).exists():
+                    continue
                 child_serializer = ParentChildRelationSerializer(data={
                                 'child': child,
                                 'parent': persons.id,
@@ -2178,7 +2192,7 @@ class V4AdminPersonDetailView(APIView):
             return Response({'message': 'Admin Person not found'}, status=status.HTTP_404_NOT_FOUND)
         if not admin_person.is_admin:
             return Response({'message': 'User does not have admin access'}, status=status.HTTP_403_FORBIDDEN)
-
+ 
         # Cross-validate X-Mobile-Number header
         mobile_header = request.headers.get("X-Mobile-Number")
         if mobile_header:
@@ -2233,7 +2247,7 @@ class V4AdminPersonDetailView(APIView):
         is_registered_directly = request.data.get('is_registered_directly')
         samaj_id = request.data.get('samaj')
         is_demo_user = admin_person.is_demo if admin_person else False
-
+ 
         person_data = {
             'first_name' : first_name,
             'middle_name' : middle_name,
@@ -2264,13 +2278,18 @@ class V4AdminPersonDetailView(APIView):
             
             persons = serializer.save()
  
-            father_data = get_relation_queryset(request).filter(child=persons.id)
-            if father_data.exists():
-                father_data.update(child=persons.id, parent_id=father, is_demo=is_demo_user)
-            else:
-                ParentChildRelation.objects.create(child=persons, parent_id=father, created_user=persons, is_demo=is_demo_user)
+            # Validate father exists before updating/creating relation
+            if father and Person.objects.filter(pk=father).exists():
+                father_data = get_relation_queryset(request).filter(child=persons.id)
+                if father_data.exists():
+                    father_data.update(child=persons.id, parent_id=father, is_demo=is_demo_user)
+                else:
+                    ParentChildRelation.objects.create(child=persons, parent_id=father, created_user=persons, is_demo=is_demo_user)
  
             for child in children:
+                # Validate child exists before updating/creating relation
+                if not Person.objects.filter(pk=child).exists():
+                    continue
                 child_data = get_relation_queryset(request).filter(child=child)
                 if child_data.exists() :
                     child_data.update(parent=persons.id, child=child, is_demo=is_demo_user)
@@ -2279,7 +2298,7 @@ class V4AdminPersonDetailView(APIView):
  
             if len(children) > 0:       
                 remove_child_person = get_relation_queryset(request).filter(parent=persons.id).exclude(child__in=children)
-                if remove_child_person.exists():
+                if remove_child_person.exists() and top_member and Person.objects.filter(pk=int(top_member)).exists():
                     remove_child_person.update(parent_id=int(top_member))
                             
             if guj_first_name or guj_middle_name:
@@ -2288,12 +2307,11 @@ class V4AdminPersonDetailView(APIView):
                     lang_data.update(first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address)
                 else:
                     TranslatePerson.objects.create(person_id=persons, first_name=guj_first_name, middle_name=guj_middle_name, address=guj_address, out_of_address=guj_out_of_address, language='guj')
-
+ 
             persons.refresh_from_db()
             return Response({"person": AdminPersonGetSerializer(persons, context={'lang': lang}).data}, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
 class V4SearchbyPerson(APIView):
     def post(self, request):
         lang = request.data.get("lang", "en")
@@ -2394,7 +2412,7 @@ class V4PendingApproveDetailView(APIView):
                     {"message": "User does not have admin access"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-
+ 
             # Cross-validate X-Mobile-Number header
             mobile_header = request.headers.get("X-Mobile-Number")
             if mobile_header:
@@ -2406,12 +2424,12 @@ class V4PendingApproveDetailView(APIView):
                         {"message": "Unauthorized: Mobile number does not match admin user"},
                         status=status.HTTP_403_FORBIDDEN,
                     )
-
+ 
             # Get surname based on admin user (assuming relationship exists)
             surname = (
                 person.surname
             )  # Modify this line based on your model relationships
-
+ 
             # Filter users by surname instead of top_member
             if person.is_admin == True:
                 pending_users = get_person_queryset(request).filter(
@@ -2439,7 +2457,7 @@ class V4PendingApproveDetailView(APIView):
                     ).data,
                 }
             elif person.is_admin == True:
-
+ 
                 pending_users = get_person_queryset(request).filter(
                     flag_show=False, surname=surname
                 ).exclude(id=surname.top_member)
@@ -2456,7 +2474,7 @@ class V4PendingApproveDetailView(APIView):
                 other_users = pending_users.exclude(child_flag=True).order_by(
                     "first_name"
                 )
-
+ 
                 data = {
                     "child": PersonV4Serializer(
                         child_users, many=True, context={"lang": lang}
@@ -2465,7 +2483,7 @@ class V4PendingApproveDetailView(APIView):
                         other_users, many=True, context={"lang": lang}
                     ).data,
                 }
-
+ 
             return Response(
                 {"message": "success", "data": data}, status=status.HTTP_200_OK
             )
@@ -2582,7 +2600,7 @@ class V4PendingApproveDetailView(APIView):
                         {"message": "User does not have admin access"},
                         status=status.HTTP_200_OK,
                     )
-
+ 
             # Cross-validate X-Mobile-Number header
             mobile_header = request.headers.get("X-Mobile-Number")
             if mobile_header:
@@ -2620,7 +2638,7 @@ class V4PendingApproveDetailView(APIView):
                     name=person.surname
                 ).values_list("top_member", flat=True)
                 top_member_ids = [int(id) for id in top_member_ids]
-                if len(top_member_ids) > 0:
+                if len(top_member_ids) > 0 and Person.objects.filter(pk=top_member_ids[0]).exists():
                     children = get_relation_queryset(request).filter(
                         parent_id=user_id, is_deleted=False
                     )
@@ -2659,8 +2677,7 @@ class V4PendingApproveDetailView(APIView):
             return Response(
                 {"message": f"Failed to delete the record"},
                 status=status.HTTP_404_NOT_FOUND,
-            )
-        
+            )   
 class PersonBySurnameViewV4(APIView):
     def post(self, request):
         surname = request.data.get("surname")
