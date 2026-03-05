@@ -61,6 +61,7 @@ from ..serializers import (
     TranslatePersonSerializer,
     CitySerializer,
     CountrySerializer,
+    CountryDetailSerializer,
     V4RelationTreeSerializer,
     # DemoPersonSerializer,
     # DemoPersonSerializerV2,
@@ -3861,9 +3862,8 @@ class StateDetailView(APIView):
 class CountryDetailView(APIView):
     authentication_classes = []
     def get(self, request):
-        country = Country.objects.all()
-        lang = request.GET.get('lang', 'en')
-        serializer = CountrySerializer(country, many=True, context={'lang': lang})
+        country = Country.objects.all().order_by("name")
+        serializer = CountryDetailSerializer(country, many=True, context={"request": request})
         data = sorted(serializer.data, key=lambda x: (x["name"]))
         return Response(data,  status=status.HTTP_200_OK)
     

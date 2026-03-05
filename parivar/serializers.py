@@ -1920,6 +1920,12 @@ class CountrySerializer(serializers.ModelSerializer):
             representation["name"] = instance.name
         return representation
 
+
+class CountryDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Country
+        fields = ["id", "name", "guj_name", "country_code", "flag"]
+
 class BannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Banner
