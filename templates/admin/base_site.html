@@ -61,7 +61,7 @@ Bila Parivar Global Admin
 {{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'css/admin_custom.css' %}?v=12">
+<link rel="stylesheet" href="{% static 'css/admin_custom.css' %}?v=15">
 {% endblock %}
 
 {% block nav-global %}{% endblock %}
@@ -103,7 +103,131 @@ Bila Parivar Global Admin
 
 <script>
     (function () {
+        function cleanFilterTitle(title) {
+            if (!title) return '';
+            return title.replace(/^by\s+/i, '').replace(/^\u25be\s*/i, '').trim();
+        }
+
+        function collectFilterSections(filterPanel) {
+            var sections = [];
+
+            // Django classic: h3 + ul
+            var children = Array.prototype.slice.call(filterPanel.children);
+            for (var i = 0; i < children.length; i++) {
+                var node = children[i];
+                if (!node.tagName || node.tagName.toLowerCase() !== 'h3') continue;
+
+                var listNode = null;
+                for (var j = i + 1; j < children.length; j++) {
+                    var candidate = children[j];
+                    if (!candidate.tagName) continue;
+                    var tag = candidate.tagName.toLowerCase();
+                    if (tag === 'ul') {
+                        listNode = candidate;
+                        break;
+                    }
+                    if (tag === 'h3' || tag === 'details') break;
+                }
+
+                if (listNode) {
+                    sections.push({
+                        title: cleanFilterTitle(node.textContent || ''),
+                        list: listNode
+                    });
+                }
+            }
+
+            // Django details/summary variant
+            var detailsNodes = filterPanel.querySelectorAll('details');
+            Array.prototype.forEach.call(detailsNodes, function (detailsNode) {
+                var summary = detailsNode.querySelector('summary');
+                var listNode = detailsNode.querySelector('ul');
+                if (!summary || !listNode) return;
+                sections.push({
+                    title: cleanFilterTitle(summary.textContent || ''),
+                    list: listNode
+                });
+            });
+
+            return sections;
+        }
+
+        function buildFilterDropdowns() {
+            var changelist = document.getElementById('changelist');
+            var filterPanel = document.getElementById('changelist-filter');
+            if (!changelist || !filterPanel) return;
+
+            var existingBar = document.querySelector('.filter-dropdown-bar');
+            if (existingBar) existingBar.remove();
+
+            var sections = collectFilterSections(filterPanel);
+
+            if (!sections.length) return;
+
+            var bar = document.createElement('div');
+            bar.className = 'filter-dropdown-bar';
+
+            Array.prototype.forEach.call(sections, function (section, index) {
+                var wrap = document.createElement('div');
+                wrap.className = 'filter-dropdown-item';
+
+                var label = document.createElement('label');
+                label.className = 'filter-dropdown-label';
+                label.setAttribute('for', 'admin-filter-select-' + index);
+                label.textContent = section.title || ('Filter ' + (index + 1));
+
+                var select = document.createElement('select');
+                select.className = 'filter-dropdown-select';
+                select.id = 'admin-filter-select-' + index;
+
+                var links = section.list.querySelectorAll('li a');
+                var selectedHref = '';
+                Array.prototype.forEach.call(links, function (a) {
+                    var option = document.createElement('option');
+                    option.value = a.getAttribute('href') || '';
+                    option.textContent = (a.textContent || '').trim();
+                    var li = a.closest('li');
+                    if (li && li.classList.contains('selected')) {
+                        option.selected = true;
+                        selectedHref = option.value;
+                    }
+                    select.appendChild(option);
+                });
+
+                if (!selectedHref && select.options.length) {
+                    select.options[0].selected = true;
+                }
+
+                select.addEventListener('change', function () {
+                    var value = this.value;
+                    if (value) window.location.href = value;
+                });
+
+                wrap.appendChild(label);
+                wrap.appendChild(select);
+                bar.appendChild(wrap);
+            });
+
+            var toolbar = document.getElementById('toolbar');
+            if (toolbar && toolbar.parentNode) {
+                toolbar.insertAdjacentElement('afterend', bar);
+            } else {
+                var form = document.getElementById('changelist-form');
+                if (form) {
+                    form.insertAdjacentElement('afterbegin', bar);
+                } else {
+                    changelist.insertAdjacentElement('afterbegin', bar);
+                }
+            }
+
+            filterPanel.style.display = 'none';
+            changelist.classList.add('filter-dropdowns-active');
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
+            // Build filter dropdowns for all admin changelist pages first.
+            buildFilterDropdowns();
+
             var sidebar = document.getElementById('custom-sidebar');
             var mainDiv = document.querySelector('div.main');
             if (!sidebar || !mainDiv) return;
@@ -170,6 +294,7 @@ Bila Parivar Global Admin
                     }
                 });
             }
+
         });
     })();
 </script>
