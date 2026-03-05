@@ -236,7 +236,7 @@ class DistrictDetailView(APIView):
     )
     def get(self, request):
         lang = request.GET.get("lang", "en")
-        districts = District.objects.filter(is_active=True)
+        districts = District.objects.filter(is_active=True).exclude(name__icontains="Guest")
         serializer = DistrictSerializer(districts, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -254,7 +254,7 @@ class TalukaDetailView(APIView):
             district_id=district_id, 
             is_active=True, 
             district__is_active=True
-        )
+        ).exclude(name__icontains="Guest")
         serializer = TalukaSerializer(talukas, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -273,7 +273,7 @@ class VillageDetailView(APIView):
             is_active=True, 
             taluka__is_active=True, 
             taluka__district__is_active=True
-        )
+        ).exclude(name__icontains="Guest")
         serializer = VillageSerializer(villages, many=True, context={"lang": lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -300,6 +300,10 @@ class VillageSearchView(APIView):
             is_active=True,
             taluka__is_active=True,
             taluka__district__is_active=True
+        ).exclude(
+            Q(name__icontains="Guest") | 
+            Q(taluka__name__icontains="Guest") | 
+            Q(taluka__district__name__icontains="Guest")
         ).select_related('taluka', 'taluka__district').order_by('taluka__district__name', 'taluka__name', 'name')
         
         serializer = VillageSearchSerializer(villages, many=True, context={"lang": lang})
@@ -601,7 +605,7 @@ class AllVillageListView(APIView):
             is_active=True, 
             taluka__is_active=True, 
             taluka__district__is_active=True
-        ).order_by('name')
+        ).exclude(name__icontains="Guest").order_by('name')
         serializer = VillageSerializer(villages, many=True, context={'lang': lang})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
