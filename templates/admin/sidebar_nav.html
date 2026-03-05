@@ -1,0 +1,22 @@
+{% load i18n admin_extras %}
+{# ─── Custom Left Sidebar Navigation ─── #}
+<nav id="custom-sidebar" aria-label="Site navigation">
+
+    {# Home #}
+    <a href="{% url 'admin:index' %}"
+        class="sidebar-item {% if request.path == '/admin/' or request.path == '/admin' %}active{% endif %}"
+        title="{% trans 'Home' %}">
+        <span class="sidebar-icon">{% home_icon %}</span>
+        <span class="sidebar-label">{% trans "Home" %}</span>
+    </a>
+
+    {# App Groups #}
+    {% for app in available_apps %}
+    <a href="{{ app.app_url }}" class="sidebar-item {% if app.app_label == current_app %}active{% endif %}"
+        title="{{ app.name }}">
+        <span class="sidebar-icon">{{ app.app_label|app_icon }}</span>
+        <span class="sidebar-label">{{ app.name }}</span>
+    </a>
+    {% endfor %}
+
+</nav>

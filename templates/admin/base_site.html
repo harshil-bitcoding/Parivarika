@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}
-{% load i18n static %}
+{% load i18n static admin_extras %}
 
 {% block title %}
 {% if user.is_superuser %}
@@ -43,14 +43,6 @@ Bila Parivar Global Admin
     </span>
     {% endif %}
 
-    <!-- ── Theme toggle ─────────────────────────────── -->
-    <!-- <button id="theme-toggle" class="btn-header" title="Toggle light / dark mode" onclick="(function(){
-            var h = document.documentElement;
-            var isLight = h.getAttribute('data-theme') === 'light';
-            if(isLight){ h.removeAttribute('data-theme'); localStorage.removeItem('adminTheme'); document.getElementById('theme-toggle').textContent='☀️'; }
-            else{ h.setAttribute('data-theme','light'); localStorage.setItem('adminTheme','light'); document.getElementById('theme-toggle').textContent='🌙'; }
-          })()">☀️</button> -->
-
     {% if user.has_usable_password %}
     <a href="{% url 'admin:password_change' %}" class="btn-header">{% translate "Change password" %}</a>
     {% endif %}
@@ -63,25 +55,71 @@ Bila Parivar Global Admin
         %}</a>
     {% endif %}
 </div>
-
-<!-- Apply saved theme before first paint to avoid flash -->
-<!-- <script>
-    (function () {
-        var t = localStorage.getItem('adminTheme');
-        if (t === 'light') {
-            document.documentElement.setAttribute('data-theme', 'light');
-            var btn = document.getElementById('theme-toggle');
-            if (btn) btn.textContent = '🌙';
-        }
-    })();
-</script> -->
 {% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'css/admin_custom.css' %}?v=10">
+<link rel="stylesheet" href="{% static 'css/admin_custom.css' %}?v=12">
 {% endblock %}
 
 {% block nav-global %}{% endblock %}
+
+{# ─────────────────────────────────────────────────────────────────────── #}
+{# Sidebar rendered server-side as hidden HTML, then JS moves it into .main #}
+{# This avoids all SVG-in-JS-string escaping issues. #}
+{# ─────────────────────────────────────────────────────────────────────── #}
+{% block footer %}
+{{ block.super }}
+
+{# Hidden sidebar — rendered by Django with full SVG icons, correct hrefs #}
+<nav id="custom-sidebar" aria-label="Site navigation" style="display:none;">
+
+    <a href="{% url 'admin:index' %}" class="sidebar-item" id="csb-home">
+        <span class="sidebar-icon">{% home_icon %}</span>
+        <span class="sidebar-label">{% trans "Home" %}</span>
+    </a>
+
+    {% for app in available_apps %}
+    <a href="{{ app.app_url }}" class="sidebar-item" data-app="{{ app.app_label }}">
+        <span class="sidebar-icon">{{ app.app_label|app_icon|safe }}</span>
+        <span class="sidebar-label">{{ app.name }}</span>
+    </a>
+    {% endfor %}
+
+</nav>
+
+<script>
+    (function () {
+        document.addEventListener('DOMContentLoaded', function () {
+            var sidebar = document.getElementById('custom-sidebar');
+            var mainDiv = document.querySelector('div.main');
+            if (!sidebar || !mainDiv) return;
+
+            // Remove Django's built-in nav sidebar and toggle button
+            var djangoNav = document.getElementById('nav-sidebar');
+            if (djangoNav) djangoNav.remove();
+            var toggleBtn = document.querySelector('.toggle-nav-sidebar-icon');
+            if (toggleBtn) toggleBtn.remove();
+
+            // Move our sidebar from foot to the START of div.main
+            sidebar.style.display = '';
+            mainDiv.insertBefore(sidebar, mainDiv.firstChild);
+
+            // Active state: highlight the item whose href matches current URL
+            var path = window.location.pathname;
+            document.querySelectorAll('#custom-sidebar .sidebar-item').forEach(function (a) {
+                var href = a.getAttribute('href');
+                if (!href) return;
+                // Home only matches exact /admin/
+                if (href === '/admin/' || href === '/admin') {
+                    if (path === '/admin/' || path === '/admin') a.classList.add('active');
+                } else if (path.startsWith(href)) {
+                    a.classList.add('active');
+                }
+            });
+        });
+    })();
+</script>
+{% endblock %}
