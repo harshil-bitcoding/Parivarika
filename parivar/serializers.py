@@ -382,9 +382,9 @@ class PersonV4Serializer(serializers.ModelSerializer):
 
             # format validation
             for num in mobile_numbers:
-                if not re.match(r"^\d{7,14}$", num):
+                if not re.match(r"^\d{1,20}$", num):
                     raise serializers.ValidationError({
-                        "message": "Mobile number must be 7-14 digits only."
+                        "message": "Mobile number must be 1-20 digits only."
                     })
 
             # same number check
@@ -652,9 +652,9 @@ class PersonSerializer(serializers.ModelSerializer):
 
             # format validation
             for num in mobile_numbers:
-                if not re.match(r"^\d{7,14}$", num):
+                if not re.match(r"^\d{1,20}$", num):
                     raise serializers.ValidationError({
-                        "message": "Mobile number must be 7-14 digits only."
+                        "message": "Mobile number must be 1-20 digits only."
                     })
 
             # same number check
