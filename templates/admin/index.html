@@ -1,0 +1,82 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .empty-dashboard {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 70vh;
+        color: var(--txt2, #8b9bb4);
+        text-align: center;
+        opacity: 0;
+        animation: fadeIn 0.5s ease forwards;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .empty-dashboard svg {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 24px;
+        opacity: 0.2;
+        color: var(--teal, #00b894);
+    }
+
+    .empty-dashboard h1 {
+        font-size: 28px !important;
+        font-weight: 600 !important;
+        color: var(--txt, #ffffff) !important;
+        margin: 0 0 12px 0 !important;
+        border: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+
+    .empty-dashboard p {
+        font-size: 16px;
+        max-width: 450px;
+        line-height: 1.6;
+        margin: 0;
+    }
+</style>
+{% endblock %}
+
+{% block coltype %}colMS{% endblock %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="empty-dashboard">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+    <h1>{% trans "Welcome to Parivar Book" %}</h1>
+    <p>{% trans "Please select a module from the left sidebar to start managing your data." %}</p>
+</div>
+{% endblock %}
+
+{% block sidebar %}
+{# Intentionally leaving this empty to bypass Django's default Recent Actions #}
+{% endblock %}

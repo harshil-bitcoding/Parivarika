@@ -76,16 +76,27 @@ Bila Parivar Global Admin
 {# Hidden sidebar — rendered by Django with full SVG icons, correct hrefs #}
 <nav id="custom-sidebar" aria-label="Site navigation" style="display:none;">
 
-    <a href="{% url 'admin:index' %}" class="sidebar-item" id="csb-home">
-        <span class="sidebar-icon">{% home_icon %}</span>
-        <span class="sidebar-label">{% trans "Home" %}</span>
-    </a>
 
     {% for app in available_apps %}
-    <a href="{{ app.app_url }}" class="sidebar-item" data-app="{{ app.app_label }}">
-        <span class="sidebar-icon">{{ app.app_label|app_icon|safe }}</span>
-        <span class="sidebar-label">{{ app.name }}</span>
-    </a>
+    <div class="sidebar-group" data-app="{{ app.app_label }}">
+        <a href="#" class="sidebar-item app-toggle">
+            <span class="sidebar-icon">{{ app.app_label|app_icon|safe }}</span>
+            <span class="sidebar-label">{{ app.name }}</span>
+            <span class="sidebar-arrow">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </span>
+        </a>
+        <div class="sidebar-submenu">
+            {% for model in app.models %}
+            {% if model.admin_url %}
+            <a href="{{ model.admin_url }}" class="sidebar-subitem">{{ model.name }}</a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
     {% endfor %}
 
 </nav>
@@ -107,18 +118,58 @@ Bila Parivar Global Admin
             sidebar.style.display = '';
             mainDiv.insertBefore(sidebar, mainDiv.firstChild);
 
-            // Active state: highlight the item whose href matches current URL
+            // Sidebar accordion logic
+            var toggles = document.querySelectorAll('.app-toggle');
+            toggles.forEach(function (toggle) {
+                toggle.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    var group = this.closest('.sidebar-group');
+                    var wasExpanded = group.classList.contains('expanded');
+
+                    if (!wasExpanded) {
+                        group.classList.add('expanded');
+                    } else {
+                        group.classList.remove('expanded');
+                    }
+                });
+            });
+
+            // Active state
             var path = window.location.pathname;
-            document.querySelectorAll('#custom-sidebar .sidebar-item').forEach(function (a) {
+
+
+            // Subitems
+            var subitems = document.querySelectorAll('.sidebar-subitem');
+            var foundActive = false;
+
+            subitems.forEach(function (a) {
                 var href = a.getAttribute('href');
-                if (!href) return;
-                // Home only matches exact /admin/
-                if (href === '/admin/' || href === '/admin') {
-                    if (path === '/admin/' || path === '/admin') a.classList.add('active');
-                } else if (path.startsWith(href)) {
+                if (href && path.startsWith(href)) {
                     a.classList.add('active');
+
+                    // Expand parent group
+                    var group = a.closest('.sidebar-group');
+                    if (group) group.classList.add('expanded');
+
+                    // Highlight parent toggle
+                    var toggle = group.querySelector('.app-toggle');
+                    if (toggle) toggle.classList.add('active-parent');
+
+                    foundActive = true;
                 }
             });
+
+            // If no subitem matched, check if an app index was visited directly
+            if (!foundActive && path !== '/admin/' && path !== '/admin') {
+                document.querySelectorAll('.app-toggle').forEach(function (toggle) {
+                    var group = toggle.closest('.sidebar-group');
+                    var appLabel = group.getAttribute('data-app');
+                    if (appLabel && path.includes('/' + appLabel + '/')) {
+                        group.classList.add('expanded');
+                        toggle.classList.add('active-parent');
+                    }
+                });
+            }
         });
     })();
 </script>

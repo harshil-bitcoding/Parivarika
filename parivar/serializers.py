@@ -1924,7 +1924,7 @@ class CountrySerializer(serializers.ModelSerializer):
 class CountryDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Country
-        fields = ["id", "name", "guj_name", "country_code", "flag"]
+        fields = ["id", "name", "guj_name", "country_code", "mobile_number_length", "flag"]
 
 class BannerSerializer(serializers.ModelSerializer):
     class Meta:

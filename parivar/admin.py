@@ -669,7 +669,7 @@ class StateAdmin(admin.ModelAdmin):
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
-    list_display = ["id", "name", "guj_name"]
+    list_display = ["id", "name", "guj_name", "country_code", "mobile_number_length"]
 
 
 @admin.register(District)

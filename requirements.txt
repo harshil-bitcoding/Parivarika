@@ -49,6 +49,7 @@ opencv-python==4.10.0.84
 openpyxl==3.1.5
 packaging==24.0
 password==0.2
+phonenumbers==9.0.25
 pillow==10.3.0
 progressbar2==4.4.2
 prompt_toolkit==3.0.47
@@ -79,3 +80,4 @@ uritemplate==4.1.1
 urllib3==2.2.1
 vine==5.1.0
 wcwidth==0.2.13
+wheel==0.46.3
