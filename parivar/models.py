@@ -188,8 +188,8 @@ class Person(models.Model):
         Surname, on_delete=models.CASCADE, blank=True, null=True
     )
     date_of_birth = models.CharField(max_length=100, null=True, blank=True)
-    mobile_number1 = models.CharField(max_length=12, blank=True, null=True)
-    mobile_number2 = models.CharField(max_length=12, blank=True, null=True)
+    mobile_number1 = models.CharField(max_length=20, blank=True, null=True)
+    mobile_number2 = models.CharField(max_length=20, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
     out_of_address = models.CharField(max_length=500, blank=True, null=True)
     out_of_mobile = models.CharField(max_length=100, blank=True, null=True)
