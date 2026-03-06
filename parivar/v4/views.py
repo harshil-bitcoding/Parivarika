@@ -1286,6 +1286,7 @@ class V4PersonDetailView(APIView):
         city = request.data.get('city')
         state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
+        out_of_mobile = request.data.get('out_of_mobile')
         def parse_bool(val, default):
             if val is None:
                 return default
@@ -1294,7 +1295,6 @@ class V4PersonDetailView(APIView):
             if str(val).lower() in ['false', '0', 'no', '']:
                 return False
             return True
-
         flag_show = parse_bool(request.data.get('flag_show'), True)
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
@@ -1312,6 +1312,7 @@ class V4PersonDetailView(APIView):
             'city': city,
             'state': state,
             'out_of_country': out_of_country,
+            'out_of_mobile': out_of_mobile,
             'flag_show': flag_show,
             'mobile_number1': mobile_number1,
             'mobile_number2': mobile_number2,
@@ -1337,6 +1338,10 @@ class V4PersonDetailView(APIView):
                 persons.surname_id = surname
             if samaj_id:
                 persons.samaj_id = samaj_id
+            if out_of_country:
+                persons.out_of_country_id = out_of_country
+            if out_of_mobile:
+                persons.out_of_mobile = out_of_mobile
             if person_data.get('profile'):
                 persons.profile = person_data['profile']
             if person_data.get('thumb_profile'):
@@ -1445,6 +1450,7 @@ class V4PersonDetailView(APIView):
         city = request.data.get('city')
         state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
+        out_of_mobile = request.data.get('out_of_mobile', person.out_of_mobile)
         def parse_bool(val, default):
             if val is None:
                 return default
@@ -1453,7 +1459,6 @@ class V4PersonDetailView(APIView):
             if str(val).lower() in ['false', '0', 'no', '']:
                 return False
             return True
-
         flag_show = parse_bool(request.data.get('flag_show'), person.flag_show)
         mobile_number1 = request.data.get('mobile_number1')
         mobile_number2 = request.data.get('mobile_number2')
@@ -1470,6 +1475,7 @@ class V4PersonDetailView(APIView):
             'city': city,
             'state': state,
             'out_of_country': out_of_country,
+            'out_of_mobile': out_of_mobile,
             'flag_show': flag_show,
             'mobile_number1': mobile_number1,
             'mobile_number2': mobile_number2,
@@ -1515,6 +1521,10 @@ class V4PersonDetailView(APIView):
                 persons.surname_id = surname
             if samaj_id:
                 persons.samaj_id = samaj_id
+            if out_of_country:
+                persons.out_of_country_id = out_of_country
+            if out_of_mobile is not None:
+                persons.out_of_mobile = out_of_mobile
             if person_data.get('profile'):
                 persons.profile = person_data['profile']
             if person_data.get('thumb_profile'):
@@ -2113,6 +2123,7 @@ class V4AdminPersonDetailView(APIView):
         middle_name = request.data.get('middle_name')
         address = request.data.get('address')
         out_of_country = request.data.get('out_of_country', 1)
+        out_of_mobile = request.data.get('out_of_mobile')
         out_of_address = request.data.get('out_of_address')
         guj_first_name = request.data.get('guj_first_name') or request.data.get('trans_first_name')
         guj_middle_name = request.data.get('guj_middle_name') or request.data.get('trans_middle_name')
@@ -2240,7 +2251,12 @@ class V4AdminPersonDetailView(APIView):
                         fk_update_fields.append('out_of_country')
                 except (ValueError, TypeError):
                     pass
- 
+
+            # out_of_mobile: plain char field, assign directly
+            if out_of_mobile:
+                persons.out_of_mobile = out_of_mobile
+                fk_update_fields.append('out_of_mobile')
+
             if fk_update_fields:
                 persons.save(update_fields=fk_update_fields)
  
@@ -2350,6 +2366,7 @@ class V4AdminPersonDetailView(APIView):
         city = request.data.get('city')
         state = request.data.get('state')
         out_of_country = request.data.get('out_of_country', 1)
+        out_of_mobile = request.data.get('out_of_mobile', person.out_of_mobile)
         guj_first_name = request.data.get('guj_first_name') or request.data.get('trans_first_name')
         guj_middle_name = request.data.get('guj_middle_name') or request.data.get('trans_middle_name')
         guj_address = request.data.get('guj_address')
@@ -2409,6 +2426,10 @@ class V4AdminPersonDetailView(APIView):
                 persons.surname_id = surname
             if samaj_id:
                 persons.samaj_id = samaj_id
+            if out_of_country:
+                persons.out_of_country_id = out_of_country
+            if out_of_mobile is not None:
+                persons.out_of_mobile = out_of_mobile
             if person_data.get('profile'):
                 persons.profile = person_data['profile']
             if person_data.get('thumb_profile'):
