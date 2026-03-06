@@ -460,6 +460,10 @@ class PersonAdmin(SamajScopedAdmin, ImportExportModelAdmin):
     ]
     inlines = [TranslatePersonInline]
 
+    def has_import_permission(self, request):
+        """Disable the default django-import-export IMPORT button for Person."""
+        return False
+
     def get_list_filter(self, request):
         """
         Superusers keep the full filter set.
