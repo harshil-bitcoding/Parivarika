@@ -1861,16 +1861,17 @@ class V4AdminPersons(APIView):
         # ===== Permission Based Admin List =====
 
         if person.is_admin:
-            # All admins get full list
+            # Admins see all admins across the platform
             admin_persons = get_person_queryset(request).filter(
                 Q(is_admin=True),
             )
 
         else:
-            # Non-admin cannot access
-            return Response(
-                {"message": "Permission denied"},
-                status=status.HTTP_403_FORBIDDEN,
+            # Regular users see admins scoped to their samaj + surname
+            admin_persons = get_person_queryset(request).filter(
+                Q(is_admin=True),
+                samaj=person.samaj,
+                surname=person.surname,
             )
 
         admin_persons = (
