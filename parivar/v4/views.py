@@ -1466,9 +1466,9 @@ class V4PersonDetailView(APIView):
         is_registered_directly = parse_bool(request.data.get('is_registered_directly'), person.is_registered_directly)
         samaj_id = request.data.get('samaj', person.samaj_id)
         person_data = {
-            'first_name' : person.first_name if lang == 'en' else first_name,
-            'middle_name' : person.middle_name if lang == 'en' else middle_name,
-            'address' : person.address if lang == 'en' else address,
+            'first_name' : first_name if lang == 'en' else person.first_name,
+            'middle_name' : middle_name if lang == 'en' else person.middle_name,
+            'address' : address if lang == 'en' else person.address,
             'out_of_address': out_of_address,
             'date_of_birth': date_of_birth,
             'blood_group': blood_group,
