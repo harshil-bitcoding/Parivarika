@@ -3098,19 +3098,19 @@ class V4BannerDetailView(APIView):
         )
 
         # Apply filters based on admin status
-        if login_person:
-            if login_person.is_admin:
+        # if login_person:
+            # if login_person.is_admin:
                 # Admin sees all banners within their samaj
-                if samaj_id:
-                    active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
-                    expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
-            else:
-                # Regular user sees only the banners they created
-                active_qs = active_qs.filter(created_person=login_person)
-                expire_qs = expire_qs.filter(created_person=login_person)
-        elif samaj_id:
-            active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
-            expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
+            # if samaj_id:
+            #     active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
+            #     expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
+            # else:
+            #     # Regular user sees only the banners they created
+            #     active_qs = active_qs.filter(created_person=login_person)
+            #     expire_qs = expire_qs.filter(created_person=login_person)
+        # elif samaj_id:
+        #     active_qs = active_qs.filter(created_person__samaj_id=samaj_id)
+        #     expire_qs = expire_qs.filter(created_person__samaj_id=samaj_id)
 
         active_banner = active_qs.order_by("expire_date")
         expire_banner = expire_qs.order_by("-expire_date")
