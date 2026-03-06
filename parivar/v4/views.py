@@ -3096,7 +3096,7 @@ class V4BannerDetailView(APIView):
         expire_qs = Banner.objects.filter(
             is_active=False, expire_date__lt=today, is_deleted=False
         )
-
+    
         # Apply filters based on admin status
         # if login_person:
             # if login_person.is_admin:
